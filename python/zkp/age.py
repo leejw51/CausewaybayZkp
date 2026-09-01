@@ -2,10 +2,13 @@
 
 Statement the verifier checks
 -----------------------------
-Public: Pedersen commitment C = g^{age} h^{r}, threshold T = 18.
-Witness (kept by the holder): (age, r).
+Public: Pedersen commitment C = g^{age} h^{r}, threshold T = 18,
+        holder key pk, the ID office's signature on (C, pk),
+        and the gate's challenge for this conversation (nonce).
+Witness (kept by the holder): (age, r) and the private key sk.
 
-Prove:  I know (age, r) such that C opens to age  AND  age ∈ [T, T + 2^n).
+Prove:  I know (age, r) such that C opens to age  AND  age ∈ [T, T + 2^n)
+        AND I know sk with pk = g^{sk}.
 
 How (range proof by bits)
 -------------------------
@@ -24,8 +27,19 @@ that the leftover randomness matches:
 A Schnorr proof that D is a power of h shows D commits to 0, i.e. the
 bits really sum to age − T.
 
-Fiat–Shamir: one SHA-256 over the whole transcript is the challenge.
-The verifier never sees age, r, the bits, or the r_i's.
+Who owns the envelope (identity.py)
+-----------------------------------
+The range proof alone only says "whoever wrote this knows an opening of
+C". Three more things make it *this person's* envelope:
+
+  * the ID office signs (C, pk) — the gate checks that signature first;
+  * the gate hands the holder a fresh nonce, which goes into the hash,
+    so a proof is valid for this one conversation and cannot be replayed;
+  * the proof carries a Schnorr proof of knowledge of sk (base g) under
+    the same challenge — only the holder of sk can write it.
+
+Fiat–Shamir: one SHA-256 over the whole transcript (nonce included) is
+the challenge. The verifier never sees age, r, sk, the bits, or the r_i's.
 
 Soundness sketch: if age < T then δ < 0, which is not an n-bit unsigned
 integer. Forging bits that still satisfy the D-check means either
@@ -34,10 +48,8 @@ breaking the 0/1 OR proofs or opening a Pedersen commitment two ways.
 Hiding: Pedersen is perfectly hiding, and each Sigma protocol is HVZK,
 so the transcript is simulatable without the age.
 
-This is a study protocol. A deployed ID system still needs a trusted
-issuer (or a PKI) who binds C to a real person — otherwise anyone can
-commit to 99 and prove they are "adult". The ZKP only proves a fact
-about C, not about the human.
+This is a study protocol: the group is toy-sized and the demo issuer key
+is generated at import. The shape, however, is the real one.
 """
 
 from __future__ import annotations
@@ -46,6 +58,7 @@ import json
 from dataclasses import asdict, dataclass
 
 from zkp.group import PARAMS, GroupParams, fiat_shamir
+from zkp.identity import KeyPair, Signature, keygen, sign, verify_sig
 from zkp.pedersen import commit
 from zkp.sigma import (
     BitProof,
@@ -54,7 +67,6 @@ from zkp.sigma import (
     bit_commit,
     bit_respond,
     bit_verify,
-    schnorr_prove,
     schnorr_verify,
 )
 
@@ -62,14 +74,20 @@ ADULT_AGE = 18
 N_BITS = 8  # δ in [0, 255] → ages 18..273
 MAX_AGE = ADULT_AGE + (1 << N_BITS) - 1
 
+# The ID office's key. A real deployment has a long-lived key whose public
+# half every gate is configured with; the study desk makes one at import.
+ISSUER = keygen()
+
 
 @dataclass(frozen=True)
 class Credential:
-    """Issued secret. The holder keeps this; the world only sees C."""
+    """Issued secret. The holder keeps this; the world only sees C and pk."""
 
     age: int
     r: int
     C: int
+    holder: KeyPair  # sk stays here, pk is public
+    issuer_sig: Signature  # ID office's signature over (C, pk)
 
 
 @dataclass(frozen=True)
@@ -80,18 +98,30 @@ class AgeProof:
     bit_commitments: tuple[int, ...]
     bit_proofs: tuple[BitProof, ...]
     consistency: SchnorrProof
+    pk: int
+    issuer_sig: Signature
+    nonce: str  # the gate's challenge this proof answers
+    owner: SchnorrProof  # PoK{ sk : pk = g^sk }, base g
 
 
-def issue_credential(age: int, params: GroupParams = PARAMS) -> Credential:
-    """ID office: bind a real age into a Pedersen commitment.
+def issue_credential(
+    age: int,
+    holder: KeyPair | None = None,
+    issuer: KeyPair = ISSUER,
+    params: GroupParams = PARAMS,
+) -> Credential:
+    """ID office: bind a real age into a Pedersen commitment, for one key.
 
-    In a real deployment this step is the trusted issuer (passport
-    office). The holder receives (age, r) and everyone can see C.
+    The holder makes their own key pair and shows the office only pk. The
+    office seals the age, signs (C, pk), and hands back (age, r, C, sig).
+    In a real deployment this step is the trusted issuer (passport office).
     """
     if age < 0 or age > MAX_AGE:
         raise ValueError(f"age must be in 0..{MAX_AGE} for this study range")
+    holder = keygen(params) if holder is None else holder
     C, opening = commit(age, params=params)
-    return Credential(age=age, r=opening.randomness, C=C)
+    sig = sign(issuer.sk, [C, holder.pk], params=params)
+    return Credential(age=age, r=opening.randomness, C=C, holder=holder, issuer_sig=sig)
 
 
 def _bits(delta: int, n: int) -> list[int]:
@@ -107,13 +137,22 @@ def _challenge(proof_like: dict, announcements: list[int], params: GroupParams) 
         proof_like["threshold"],
         proof_like["n_bits"],
         proof_like["C"],
+        proof_like["pk"],
+        proof_like["nonce"],
         *proof_like["bit_commitments"],
         *announcements,
         q=params.q,
     )
 
 
-def prove_adult(cred: Credential, threshold: int = ADULT_AGE, n_bits: int = N_BITS, params: GroupParams = PARAMS) -> AgeProof:
+def prove_adult(
+    cred: Credential,
+    threshold: int = ADULT_AGE,
+    n_bits: int = N_BITS,
+    params: GroupParams = PARAMS,
+    nonce: str = "",
+) -> AgeProof:
+    """Holder: answer the gate's `nonce` with a proof bound to this credential."""
     age = cred.age
     if age < threshold:
         raise ValueError(
@@ -134,27 +173,33 @@ def prove_adult(cred: Credential, threshold: int = ADULT_AGE, n_bits: int = N_BI
         bit_rs.append(r_i)
         drafts.append(bit_announce(C_i, b, r_i, params=params))
 
+    # The verifier will recompute D = C / (g^T · Π C_i^{2^i}); the prover
+    # only needs its discrete log, r_diff, to answer for it.
     r_bits = sum(r_i * (1 << i) for i, r_i in enumerate(bit_rs)) % params.q
     r_diff = (cred.r - r_bits) % params.q
 
-    # D = C / (g^T · Π C_i^{2^i})  should equal h^{r_diff}
-    gT = params.exp(params.g, threshold)
-    product = 1
-    for i, C_i in enumerate(bit_Cs):
-        product = params.mul(product, params.exp(C_i, 1 << i))
-    D = params.mul(cred.C, params.inv(params.mul(gT, product)))
-
+    # Announcements first (t before c is what makes Fiat-Shamir sound).
     k_cons = params.rand_scalar()
     t_cons = params.exp(params.h, k_cons)
+    k_own = params.rand_scalar()
+    t_own = params.exp(params.g, k_own)
 
-    announcements = [t_cons] + [x for d in drafts for x in (d.t0, d.t1)]
+    announcements = [t_cons, t_own] + [x for d in drafts for x in (d.t0, d.t1)]
     c = _challenge(
-        {"threshold": threshold, "n_bits": n_bits, "C": cred.C, "bit_commitments": bit_Cs},
+        {
+            "threshold": threshold,
+            "n_bits": n_bits,
+            "C": cred.C,
+            "pk": cred.holder.pk,
+            "nonce": nonce,
+            "bit_commitments": bit_Cs,
+        },
         announcements,
         params,
     )
 
     cons = SchnorrProof(t=t_cons, s=(k_cons + c * r_diff) % params.q)
+    owner = SchnorrProof(t=t_own, s=(k_own + c * cred.holder.sk) % params.q)
     bit_proofs = tuple(bit_respond(d, c, params=params) for d in drafts)
     return AgeProof(
         threshold=threshold,
@@ -163,6 +208,10 @@ def prove_adult(cred: Credential, threshold: int = ADULT_AGE, n_bits: int = N_BI
         bit_commitments=tuple(bit_Cs),
         bit_proofs=bit_proofs,
         consistency=cons,
+        pk=cred.holder.pk,
+        issuer_sig=cred.issuer_sig,
+        nonce=nonce,
+        owner=owner,
     )
 
 
@@ -178,10 +227,17 @@ def verify_adult(
     proof: AgeProof,
     threshold: int = ADULT_AGE,
     params: GroupParams = PARAMS,
+    nonce: str | None = None,
+    issuer_pk: int | None = None,
 ) -> tuple[bool, str]:
-    """Return (ok, reason). The verifier's policy threshold is an argument —
-    a proof for '>= 16' must not be accepted at a door that requires 18.
+    """Gate: return (ok, reason). Needs only the proof, the policy threshold,
+    the challenge it handed out (`nonce`), and the ID office's public key.
+
+    A proof for '>= 16' must not be accepted at a door that requires 18;
+    a proof answering yesterday's nonce must not be accepted today.
     """
+    issuer_pk = ISSUER.pk if issuer_pk is None else issuer_pk
+
     if proof.threshold != threshold:
         return False, f"proof is for threshold {proof.threshold}, verifier requires {threshold}"
     if proof.n_bits != N_BITS:
@@ -189,27 +245,43 @@ def verify_adult(
     if len(proof.bit_commitments) != proof.n_bits or len(proof.bit_proofs) != proof.n_bits:
         return False, "bit commitment / proof count mismatch"
 
-    announcements = [proof.consistency.t] + [x for bp in proof.bit_proofs for x in (bp.t0, bp.t1)]
+    # 1. Is this answer to *my* challenge? (replay protection)
+    if nonce is not None and proof.nonce != nonce:
+        return False, "challenge mismatch: this proof answers a different conversation (replay?)"
+
+    # 2. Was this envelope sealed by the ID office, for this key?
+    if not verify_sig(issuer_pk, [proof.C, proof.pk], proof.issuer_sig, params=params):
+        return False, "issuer signature invalid: envelope was not issued by the ID office for this key"
+
+    announcements = [proof.consistency.t, proof.owner.t] + [x for bp in proof.bit_proofs for x in (bp.t0, bp.t1)]
     c = _challenge(
         {
             "threshold": proof.threshold,
             "n_bits": proof.n_bits,
             "C": proof.C,
+            "pk": proof.pk,
+            "nonce": proof.nonce,
             "bit_commitments": list(proof.bit_commitments),
         },
         announcements,
         params,
     )
 
+    # 3. Is the person answering the holder of sk behind pk?
+    if not schnorr_verify(proof.pk, proof.owner, c, params=params, base=params.g):
+        return False, "owner proof failed: prover does not hold the private key for pk"
+
+    # 4. Do the bits add up to age − T?
     D = _derived_D(proof, params)
     if not schnorr_verify(D, proof.consistency, c, params=params):
         return False, "consistency Schnorr failed (bits do not sum to age − threshold)"
 
+    # 5. Is every bit really a 0 or a 1?
     for i, (C_i, bp) in enumerate(zip(proof.bit_commitments, proof.bit_proofs)):
         if not bit_verify(C_i, bp, c, params=params):
             return False, f"bit {i} is not proven to be 0 or 1"
 
-    return True, "accept: committed age is in [{}, {}]".format(threshold, threshold + (1 << proof.n_bits) - 1)
+    return True, f"accept: committed age is in [{threshold}, {threshold + (1 << proof.n_bits) - 1}], issued to this key"
 
 
 def _hex(n: int) -> str:
@@ -217,31 +289,76 @@ def _hex(n: int) -> str:
 
 
 def proof_to_json(proof: AgeProof) -> str:
+    """Everything the gate needs — and nothing the holder must keep."""
     payload = {
         "threshold": proof.threshold,
         "n_bits": proof.n_bits,
+        "nonce": proof.nonce,
         "C": _hex(proof.C),
+        "pk": _hex(proof.pk),
+        "issuer_sig": {"R": _hex(proof.issuer_sig.R), "s": _hex(proof.issuer_sig.s)},
+        "owner": {"t": _hex(proof.owner.t), "s": _hex(proof.owner.s)},
         "bit_commitments": [_hex(c) for c in proof.bit_commitments],
-        "bit_proofs": [
-            {k: _hex(v) for k, v in asdict(bp).items()} for bp in proof.bit_proofs
-        ],
+        "bit_proofs": [{k: _hex(v) for k, v in asdict(bp).items()} for bp in proof.bit_proofs],
         "consistency": {"t": _hex(proof.consistency.t), "s": _hex(proof.consistency.s)},
     }
     return json.dumps(payload, indent=2)
 
 
-def proof_from_json(text: str) -> AgeProof:
+def _element(x: str, params: GroupParams, what: str) -> int:
+    """A group element from hex: must be in 1..p-1 or the verifier's
+    inverses and exponentiations are meaningless (or crash)."""
+    v = int(x, 16)
+    if not 1 <= v < params.p:
+        raise ValueError(f"{what} is not a valid group element")
+    return v
+
+
+def _scalar(x: str, params: GroupParams, what: str) -> int:
+    v = int(x, 16)
+    if not 0 <= v < params.q:
+        raise ValueError(f"{what} is not a valid scalar")
+    return v
+
+
+def proof_from_json(text: str, params: GroupParams = PARAMS) -> AgeProof:
+    """Parse untrusted JSON into an AgeProof, range-checking every number.
+    Raises ValueError on anything malformed; never returns garbage."""
     d = json.loads(text)
-    return AgeProof(
-        threshold=int(d["threshold"]),
-        n_bits=int(d["n_bits"]),
-        C=int(d["C"], 16),
-        bit_commitments=tuple(int(x, 16) for x in d["bit_commitments"]),
-        bit_proofs=tuple(
-            BitProof(**{k: int(v, 16) for k, v in bp.items()}) for bp in d["bit_proofs"]
-        ),
-        consistency=SchnorrProof(t=int(d["consistency"]["t"], 16), s=int(d["consistency"]["s"], 16)),
-    )
+    try:
+        return AgeProof(
+            threshold=int(d["threshold"]),
+            n_bits=int(d["n_bits"]),
+            nonce=str(d.get("nonce", "")),
+            C=_element(d["C"], params, "C"),
+            pk=_element(d["pk"], params, "pk"),
+            issuer_sig=Signature(
+                R=_element(d["issuer_sig"]["R"], params, "issuer_sig.R"),
+                s=_scalar(d["issuer_sig"]["s"], params, "issuer_sig.s"),
+            ),
+            owner=SchnorrProof(
+                t=_element(d["owner"]["t"], params, "owner.t"),
+                s=_scalar(d["owner"]["s"], params, "owner.s"),
+            ),
+            bit_commitments=tuple(_element(x, params, f"bit_commitments[{i}]") for i, x in enumerate(d["bit_commitments"])),
+            bit_proofs=tuple(
+                BitProof(
+                    t0=_element(bp["t0"], params, "t0"),
+                    t1=_element(bp["t1"], params, "t1"),
+                    c0=_scalar(bp["c0"], params, "c0"),
+                    c1=_scalar(bp["c1"], params, "c1"),
+                    s0=_scalar(bp["s0"], params, "s0"),
+                    s1=_scalar(bp["s1"], params, "s1"),
+                )
+                for bp in d["bit_proofs"]
+            ),
+            consistency=SchnorrProof(
+                t=_element(d["consistency"]["t"], params, "consistency.t"),
+                s=_scalar(d["consistency"]["s"], params, "consistency.s"),
+            ),
+        )
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f"malformed proof: {exc}") from exc
 
 
 def inspect_delta_bits(age: int, threshold: int = ADULT_AGE, n_bits: int = N_BITS) -> dict:

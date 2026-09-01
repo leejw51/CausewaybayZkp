@@ -6,6 +6,8 @@ Binds to 0.0.0.0 so a phone on the same Wi-Fi can open the lab.
 from __future__ import annotations
 
 import base64
+import json
+import secrets
 import socket
 from pathlib import Path
 
@@ -392,10 +394,16 @@ def lecture_flow() -> str:
       that passes. (Maths name: <em>range proof</em>.)</li>
     <li><b>The surprise question.</b> Why can't you fake the bundle? Because half-way through, a
       random question is thrown at you that you could not have prepared for. Passing a question you
-      did not choose is only possible if you actually know the secret. Here the "question" is a
-      hash, so nobody has to be present to ask it. (Maths name: <em>challenge</em>, <em>Fiat–Shamir</em>.)</li>
+      did not choose is only possible if you actually know the secret. Here the gate hands
+      you a fresh random number and the rest of the question is a hash of it, so the answer
+      is good for this one conversation only. (Maths name: <em>challenge</em>, <em>nonce</em>,
+      <em>Fiat–Shamir</em>.)</li>
+    <li><b>The name tag.</b> How does the bouncer know the envelope is <em>yours</em>? The ID office
+      writes your public key on it and signs both. At the gate you also prove you hold the matching
+      private key. A stolen envelope, or a copied proof, is useless to anyone else.
+      (Maths name: <em>issuer signature</em>, <em>proof of knowledge of sk</em>.)</li>
   </ol>
-  <p>That is the whole idea. Everything below is those three sentences, drawn.</p>
+  <p>That is the whole idea. Everything below is those four sentences, drawn.</p>
 </div>
 
 <div class="legend">
@@ -408,42 +416,45 @@ def lecture_flow() -> str:
   <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
     <path d="M0,0 L10,5 L0,10 z" fill="#C9A45C"/></marker></defs>
 
-  <text x="115" y="42" class="h" text-anchor="middle">ID OFFICE</text>
+  <text x="110" y="42" class="h" text-anchor="middle">ID OFFICE</text>
   <text x="320" y="42" class="h" text-anchor="middle">HOLDER</text>
-  <text x="525" y="42" class="h" text-anchor="middle">GATE</text>
+  <text x="530" y="42" class="h" text-anchor="middle">GATE</text>
 
-  <rect x="20"  y="56" width="190" height="118" rx="8" class="pub"/>
-  <rect x="225" y="56" width="190" height="118" rx="8" class="sec"/>
-  <rect x="430" y="56" width="190" height="118" rx="8" class="pub"/>
+  <rect x="20"  y="56" width="180" height="118" rx="8" class="pub"/>
+  <rect x="230" y="56" width="180" height="118" rx="8" class="sec"/>
+  <rect x="440" y="56" width="180" height="118" rx="8" class="pub"/>
 
-  <text x="115" y="86"  class="t" text-anchor="middle">sees the real age</text>
-  <text x="115" y="112" class="t" text-anchor="middle">seals it in envelope C</text>
-  <text x="115" y="138" class="t" text-anchor="middle">hands back (age, r)</text>
-  <text x="115" y="160" class="cap" text-anchor="middle">trusted, once</text>
+  <text x="110" y="86"  class="t" text-anchor="middle">sees the real age</text>
+  <text x="110" y="112" class="t" text-anchor="middle">seals it in envelope C</text>
+  <text x="110" y="138" class="t" text-anchor="middle">signs (C, pk)</text>
+  <text x="110" y="160" class="cap" text-anchor="middle">trusted, once</text>
 
-  <text x="320" y="86"  class="t ink" text-anchor="middle">keeps age and r</text>
-  <text x="320" y="112" class="t ink" text-anchor="middle">publishes C</text>
-  <text x="320" y="138" class="t ink" text-anchor="middle">writes proof π</text>
+  <text x="320" y="86"  class="t ink" text-anchor="middle">keeps age, r and sk</text>
+  <text x="320" y="112" class="t ink" text-anchor="middle">publishes C and pk</text>
+  <text x="320" y="138" class="t ink" text-anchor="middle">answers with proof π</text>
   <text x="320" y="160" class="cap ink" text-anchor="middle">nothing here leaves</text>
 
-  <text x="525" y="86"  class="t" text-anchor="middle">receives C and π</text>
-  <text x="525" y="112" class="t" text-anchor="middle">runs the checks</text>
-  <text x="525" y="138" class="t" text-anchor="middle">learns: age ≥ 18</text>
-  <text x="525" y="160" class="cap" text-anchor="middle">and nothing else</text>
+  <text x="530" y="86"  class="t" text-anchor="middle">hands out a challenge</text>
+  <text x="530" y="112" class="t" text-anchor="middle">checks signature, key, π</text>
+  <text x="530" y="138" class="t" text-anchor="middle">learns: age ≥ 18</text>
+  <text x="530" y="160" class="cap" text-anchor="middle">and nothing else</text>
 
-  <path d="M210,115 L223,115" class="ar"/>
-  <path d="M415,115 L428,115" class="ar"/>
-  <text x="217" y="200" class="m" text-anchor="middle">(age, r)</text>
-  <text x="422" y="200" class="m" text-anchor="middle">π  (JSON)</text>
-  <path d="M217,186 L217,178" class="lane"/>
-  <path d="M422,186 L422,178" class="lane"/>
+  <path d="M202,115 L228,115" class="ar"/>
+  <path d="M438,100 L412,100" class="ar"/>
+  <path d="M412,132 L438,132" class="ar"/>
+  <text x="215" y="200" class="m" text-anchor="middle">(age, r, sig)</text>
+  <text x="425" y="200" class="m" text-anchor="middle">← challenge</text>
+  <text x="425" y="218" class="m" text-anchor="middle">π (JSON) →</text>
+  <path d="M215,186 L215,178" class="lane"/>
+  <path d="M425,186 L425,178" class="lane"/>
 
-  <text x="320" y="236" class="cap" text-anchor="middle">The secret lives in the middle box. No arrow out of it carries the age.</text>
+  <text x="320" y="240" class="cap" text-anchor="middle">The secret lives in the middle box. No arrow out of it carries age, r or sk.</text>
 </svg>
-<figcaption><b>1 · Who sees what.</b> Think of the ID office as the one party you trust to look at
-your real age — once. It seals that age into the envelope <code>C</code> and gives you the key
-(<code>r</code>). From then on you can prove things about the envelope without ever opening it.
-The bouncer only ever holds the envelope and your proof.</figcaption>
+<figcaption><b>1 · Who sees what.</b> The ID office is the one party you trust to look at your real
+age — once. It seals that age into the envelope <code>C</code>, writes your public key <code>pk</code>
+on it and signs both; you keep the opening (<code>r</code>) and your private key (<code>sk</code>).
+At the gate you are handed a fresh challenge and answer it with a proof only <code>sk</code> can write.
+The bouncer checks the office's signature, your key, and the proof — and holds nothing else.</figcaption>
 </figure>
 
 <figure>
@@ -482,15 +493,15 @@ The bouncer only ever holds the envelope and your proof.</figcaption>
   <path d="M175,356 L175,378 L320,378 L320,392" class="ar"/>
   <path d="M465,356 L465,378 L320,378" class="ar" style="marker-end:none"/>
   <rect x="80" y="394" width="480" height="44" rx="8" class="pub"/>
-  <text x="320" y="421" class="m" text-anchor="middle">c = SHA-256( C, all Cᵢ, all announcements t )</text>
-  <text x="306" y="462" class="cap" text-anchor="end">Fiat–Shamir: the question is a hash</text>
+  <text x="320" y="421" class="m" text-anchor="middle">c = SHA-256( nonce, C, pk, all Cᵢ, all t )</text>
+  <text x="306" y="462" class="cap" text-anchor="end">the gate's nonce is in the hash</text>
 
   <path d="M320,438 L320,478" class="ar"/>
   <rect x="120" y="480" width="400" height="52" rx="8" class="pub"/>
-  <text x="320" y="502" class="m" text-anchor="middle">π = { C, Cᵢ, t, c, s }</text>
+  <text x="320" y="502" class="m" text-anchor="middle">π = { C, Cᵢ, t, s, pk, sig, nonce }</text>
   <text x="320" y="522" class="t" text-anchor="middle">→ hand this JSON to the gate</text>
   <rect x="460" y="472" width="58" height="16" rx="8" class="tag"/><text x="489" y="484" class="tagt" text-anchor="middle">PUBLIC</text>
-  <text x="320" y="556" class="cap" text-anchor="middle">Nothing manila ever enters π. The gate cannot recover age, r, δ or any bit.</text>
+  <text x="320" y="556" class="cap" text-anchor="middle">Nothing manila ever enters π. The gate cannot recover age, r, sk, δ or any bit.</text>
 </svg>
 <figcaption><b>2 · Building the proof.</b> Read top to bottom. Manila = secret, navy = public.
 The clever step is the second row: "I am 18 or over" is the <em>same claim</em> as "my age minus 18 is
@@ -535,8 +546,9 @@ If the age were 17, "age minus 18" is negative and has no switch form — the pr
 commits to a random scribble (<code>t</code>). Only <em>then</em> does the question (<code>c</code>) arrive, so the
 answer (<code>s</code>) could not have been prepared in advance — yet it can be checked by anyone. The secret
 is mixed into <code>s</code> so thoroughly with randomness that <code>s</code> alone tells you nothing.
-Fiat–Shamir is the last trick: let a hash of the scribble <em>be</em> the question. Now no live verifier is needed
-and the proof becomes a file you can paste into the box above.</figcaption>
+Fiat–Shamir is the last trick: let a hash of the scribble <em>be</em> the question. In this desk the gate still
+contributes: its random nonce is hashed in too, so the answer is fresh for each check and cannot be copied from an
+earlier one. The proof becomes a file you can paste into the box above — for this challenge only.</figcaption>
 </figure>
 
 </div>
@@ -636,8 +648,22 @@ $$
 The interactive challenge is replaced by a hash of everything the verifier would have seen:
 
 $$
-c = \\mathrm{{SHA256}}\\bigl(p,q,g,h,T,n,C,\\{{C_i\\}}, t,\\ \\{{t_{{0,i}}, t_{{1,i}}\\}}\\bigr) \\bmod q
+c = \\mathrm{{SHA256}}\\bigl(p,q,g,h,T,n,C,\\,pk,\\,\\text{{nonce}},\\{{C_i\\}}, t, t_{{own}},\\ \\{{t_{{0,i}}, t_{{1,i}}\\}}\\bigr) \\bmod q
 $$
+
+### 6. Who owns the envelope
+
+Steps 1–5 only say *"whoever wrote this knows an opening of $C$."* Three more things make it **this person's** envelope:
+
+- **Holder key.** $sk \\in \\mathbb{{Z}}_q$ never leaves the phone; $pk = g^{{sk}}$ is public.
+- **Issuer signature.** The ID office signs $(C, pk)$ with Schnorr:
+  $R = g^{{k}},\\; c' = H(R, pk_{{\\text{{office}}}}, C, pk),\\; s' = k + c'\\,sk_{{\\text{{office}}}}$.
+  The gate checks $g^{{s'}} = R \\cdot pk_{{\\text{{office}}}}^{{\\,c'}}$ **before** anything else, so a self-made envelope is thrown out at the door.
+- **Challenge and owner proof.** The gate hands out a fresh nonce; it enters the hash above. The proof carries
+  $t_{{own}} = g^{{k}},\\; s_{{own}} = k + c\\,sk$ and the gate checks $g^{{s_{{own}}}} = t_{{own}} \\cdot pk^{{c}}$.
+  Without $sk$ nobody can answer, and an answer for one nonce is useless for any other — copying a proof file gains nothing.
+
+Verifier order: threshold → nonce → issuer signature → owner proof → consistency → bits.
 """
 
 
@@ -788,20 +814,28 @@ def _bits_row(bits: list[int]) -> str:
     )
 
 
+def new_challenge() -> str:
+    """The gate's fresh nonce. A proof answers exactly one of these."""
+    return secrets.token_hex(6)
+
+
 def issue(age: float):
     age_i = int(age)
     cred = issue_credential(age_i)
     public = (
-        f"C = {_short(cred.C)}\n"
+        f"C  = {_short(cred.C)}\n"
+        f"pk = {_short(cred.holder.pk)}   holder's public key (sk stays here)\n"
+        f"ID office signature on (C, pk):  R = {_short(cred.issuer_sig.R, 18)}\n"
         f"group order q = {_short(PARAMS.q)}\n"
         f"threshold T = {ADULT_AGE}   bits n = {N_BITS}   max age = {MAX_AGE}\n\n"
-        "The world may see C. Age and r stay on this page."
+        "The world may see C, pk and the signature. Age, r and sk stay on this page."
     )
-    status = f"Credential issued for a private age. Commitment C is {_short(cred.C, 22)}."
+    status = f"Credential issued and signed by the ID office for pk. Envelope C is {_short(cred.C, 22)}."
     return cred, public, status
 
 
-def prove(cred: Credential | None, age: float):
+def prove(cred: Credential | None, age: float, nonce: str):
+    nonce = str(nonce or "")
     if cred is None:
         raise gr.Error("Issue a credential first — the ID office has to bind the age.")
     age_i = int(age)
@@ -816,7 +850,7 @@ def prove(cred: Credential | None, age: float):
             f"$\\sum b_i 2^i$ with $b_i \\in \\{{0,1\\}}$. That is the range-proof trapdoor."
         )
         return "", study, inspect.get("reason", "underage")
-    proof = prove_adult(cred)
+    proof = prove_adult(cred, nonce=nonce)
     blob = proof_to_json(proof)
     info = inspect_delta_bits(age_i)
     bits_html = _bits_row(info["bits"])
@@ -828,19 +862,21 @@ def prove(cred: Credential | None, age: float):
         f"$$C_i = g^{{b_i}} h^{{r_i}},\\qquad "
         f"D = \\frac{{C}}{{g^{{{ADULT_AGE}}} \\prod_i C_i^{{2^{{i}}}}}} = h^{{r - \\sum r_i 2^{{i}}}}$$\n\n"
         f"Eight 0/1 OR proofs + one consistency Schnorr. "
-        f"Challenge $c = \\mathrm{{SHA256}}(\\text{{transcript}}) \\bmod q$."
+        f"Challenge $c = \\mathrm{{SHA256}}(\\text{{nonce}}, C, pk, \\ldots) \\bmod q$ "
+        f"with the gate's nonce `{nonce}` inside, plus an owner proof "
+        f"$s_{{own}} = k + c\\,sk$ that only the holder of $sk$ can write."
     )
-    return blob, study, "Proof written. Hand the JSON to the gate — not the age."
+    return blob, study, f"Proof written for challenge {nonce}. Hand the JSON to the gate — not the age, not sk."
 
 
-def verify(blob: str):
+def verify(blob: str, nonce: str):
     if not blob or not str(blob).strip():
         raise gr.Error("No proof at the window.")
     try:
         proof = proof_from_json(str(blob))
-    except Exception as exc:
+    except (ValueError, json.JSONDecodeError) as exc:
         return STAMP_DENY, f"DENY — could not parse proof ({exc})"
-    ok, reason = verify_adult(proof, threshold=ADULT_AGE)
+    ok, reason = verify_adult(proof, threshold=ADULT_AGE, nonce=str(nonce or ""))
     if ok:
         return STAMP_ADMIT, f"ADMIT — {reason}"
     return STAMP_DENY, f"DENY — {reason}"
@@ -917,9 +953,16 @@ def build() -> gr.Blocks:
                     '<p class="kicker">Right page · gate</p>'
                     '<h2 class="page-title">Verify</h2>'
                     f'<p class="page-note">Policy is fixed: age ≥ {ADULT_AGE}. '
-                    "The officer never receives the age field — only the proof.</p>"
+                    "The officer hands out a fresh challenge, then receives only the proof — "
+                    "never the age, never the private key.</p>"
                 )
                 gr.HTML(f'<div id="id-preview"><img src="{ID_CARD}" alt="Redacted identity card"></div>')
+                nonce_box = gr.Textbox(
+                    label="Gate's challenge — a fresh nonce; the proof must answer this one",
+                    value=new_challenge,
+                    interactive=False,
+                    max_lines=1,
+                )
                 stamp = gr.Image(
                     value=STAMP_IDLE,
                     label="Visa stamp",
@@ -930,6 +973,7 @@ def build() -> gr.Blocks:
                 verdict = gr.Markdown("*Awaiting a proof at the window.*")
                 verify_btn = gr.Button("Check at the gate", elem_id="verify-btn")
                 tamper_btn = gr.Button("Tamper one hex digit", elem_id="tamper-btn")
+                new_nonce_btn = gr.Button("New challenge — old proofs stop working", elem_id="nonce-btn")
 
         proof_box = gr.Code(label="Proof handed to the gate (JSON)", language="json", lines=14)
         status = gr.Markdown("")
@@ -945,9 +989,10 @@ def build() -> gr.Blocks:
                 gr.Markdown(lecture_why(), latex_delimiters=LATEX)
 
         issue_btn.click(issue, inputs=[age], outputs=[cred_state, public_view, status])
-        prove_btn.click(prove, inputs=[cred_state, age], outputs=[proof_box, study, status])
-        verify_btn.click(verify, inputs=[proof_box], outputs=[stamp, verdict])
+        prove_btn.click(prove, inputs=[cred_state, age, nonce_box], outputs=[proof_box, study, status])
+        verify_btn.click(verify, inputs=[proof_box, nonce_box], outputs=[stamp, verdict])
         tamper_btn.click(tamper, inputs=[proof_box], outputs=[proof_box])
+        new_nonce_btn.click(new_challenge, inputs=[], outputs=[nonce_box])
 
     return demo
 

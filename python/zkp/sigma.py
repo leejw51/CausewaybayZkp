@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from zkp.group import PARAMS, GroupParams, fiat_shamir
+from zkp.group import PARAMS, GroupParams
 
 
 @dataclass(frozen=True)
@@ -29,15 +29,20 @@ class SchnorrProof:
     s: int
 
 
-def schnorr_prove(Y: int, x: int, challenge: int, params: GroupParams = PARAMS) -> SchnorrProof:
+def schnorr_prove(Y: int, x: int, challenge: int, params: GroupParams = PARAMS, base: int | None = None) -> SchnorrProof:
+    """Interactive form: the challenge is already known. With Fiat-Shamir the
+    challenge depends on t, so age.py announces t first and responds later."""
+    base = params.h if base is None else base
     k = params.rand_scalar()
-    t = params.exp(params.h, k)
+    t = params.exp(base, k)
     s = (k + challenge * (x % params.q)) % params.q
     return SchnorrProof(t=t, s=s)
 
 
-def schnorr_verify(Y: int, proof: SchnorrProof, challenge: int, params: GroupParams = PARAMS) -> bool:
-    left = params.exp(params.h, proof.s)
+def schnorr_verify(Y: int, proof: SchnorrProof, challenge: int, params: GroupParams = PARAMS, base: int | None = None) -> bool:
+    """base^s == t * Y^c. Base h for commitment randomness, base g for keys."""
+    base = params.h if base is None else base
+    left = params.exp(base, proof.s)
     right = params.mul(proof.t, params.exp(Y, challenge))
     return left == right
 

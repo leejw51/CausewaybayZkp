@@ -15,6 +15,7 @@ from zkp.age import (
     ADULT_AGE,
     MAX_AGE,
     N_BITS,
+    Credential,
     issue_credential,
     proof_from_json,
     proof_to_json,
@@ -22,6 +23,7 @@ from zkp.age import (
     verify_adult,
 )
 from zkp.group import PARAMS
+from zkp.identity import KeyPair, keygen, sign, verify_sig
 from zkp.pedersen import commit, verify_opening
 from zkp.sigma import bit_announce, bit_commit, bit_respond, bit_verify
 
@@ -103,6 +105,84 @@ class AgeProofTests(unittest.TestCase):
 
     def test_n_bits_constant(self):
         self.assertEqual(N_BITS, 8)
+
+
+class OwnershipTests(unittest.TestCase):
+    """The gate must know the proof is the holder's own, fresh, and issued."""
+
+    def test_signature_roundtrip(self):
+        kp = keygen()
+        sig = sign(kp.sk, [1234, "hello"])
+        self.assertTrue(verify_sig(kp.pk, [1234, "hello"], sig))
+        self.assertFalse(verify_sig(kp.pk, [1234, "hellp"], sig))
+
+    def test_answers_the_gates_challenge(self):
+        cred = issue_credential(30)
+        proof = prove_adult(cred, nonce="gate-session-1")
+        ok, reason = verify_adult(proof, nonce="gate-session-1")
+        self.assertTrue(ok, reason)
+
+    def test_replay_with_new_challenge_rejected(self):
+        cred = issue_credential(30)
+        old_proof = prove_adult(cred, nonce="yesterday")
+        ok, reason = verify_adult(old_proof, nonce="today")
+        self.assertFalse(ok)
+        self.assertIn("challenge", reason)
+
+    def test_stolen_envelope_without_private_key_fails(self):
+        victim = issue_credential(30)
+        thief_key = keygen()
+        # The thief has everything public (C, pk, signature) and even the
+        # opening (age, r) - but not sk. The proof must still fail.
+        stolen = Credential(
+            age=victim.age,
+            r=victim.r,
+            C=victim.C,
+            holder=KeyPair(sk=thief_key.sk, pk=victim.holder.pk),
+            issuer_sig=victim.issuer_sig,
+        )
+        ok, reason = verify_adult(prove_adult(stolen, nonce="n"), nonce="n")
+        self.assertFalse(ok)
+        self.assertIn("owner", reason)
+
+    def test_self_issued_envelope_rejected(self):
+        # Anyone can seal age 99 and sign it with *their own* key. The gate
+        # only trusts the ID office's key.
+        rogue_office = keygen()
+        cred = issue_credential(99, issuer=rogue_office)
+        ok, reason = verify_adult(prove_adult(cred, nonce="n"), nonce="n")
+        self.assertFalse(ok)
+        self.assertIn("issuer", reason)
+
+    def test_json_never_carries_the_private_key(self):
+        cred = issue_credential(40)
+        text = proof_to_json(prove_adult(cred, nonce="n"))
+        self.assertNotIn("sk", json.loads(text))
+        self.assertNotIn(hex(cred.holder.sk), text)
+        self.assertNotIn(hex(cred.r), text)
+
+
+class HostileInputTests(unittest.TestCase):
+    def _payload(self):
+        return json.loads(proof_to_json(prove_adult(issue_credential(30), nonce="n")))
+
+    def test_zero_element_is_rejected_cleanly(self):
+        d = self._payload()
+        d["bit_commitments"][0] = "0x0"
+        with self.assertRaises(ValueError):
+            proof_from_json(json.dumps(d))
+
+    def test_out_of_range_scalar_is_rejected(self):
+        d = self._payload()
+        d["consistency"]["s"] = hex(PARAMS.q)
+        with self.assertRaises(ValueError):
+            proof_from_json(json.dumps(d))
+
+    def test_missing_field_is_a_value_error(self):
+        d = self._payload()
+        del d["owner"]
+        with self.assertRaises(ValueError):
+            proof_from_json(json.dumps(d))
 
 
 if __name__ == "__main__":

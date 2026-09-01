@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.gradio/
+.pytest_cache/
+.DS_Store
+python/assets/*.png
+.gate18.pid
+.gate18.log
+.ruff_cache/

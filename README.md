@@ -22,12 +22,32 @@ python3 tests/test_age.py
 python3 app.py
 ```
 
-The Gradio desk **binds to `0.0.0.0:7860`**.
+Or just `make start` (and `make stop`).
 
-- This machine: `http://127.0.0.1:7860`
-- iPhone on the same Wi-Fi: `http://<your-lan-ip>:7860` (printed in the terminal and the gold bar at the top)
+## Open it on a phone
 
-If the phone cannot connect, allow Python incoming connections in **System Settings → Network → Firewall**.
+The Gradio desk **binds to `0.0.0.0:7860`**. `make start` prints every address it is
+reachable on:
+
+```
+started   pid 13970
+local     http://127.0.0.1:7860
+wifi      http://192.168.x.x:7860
+tailscale http://100.x.x.x:7860
+magicdns  http://<machine>.<tailnet>.ts.net:7860
+```
+
+- **Same Wi-Fi** — use the `wifi` line. If the phone cannot connect, allow Python
+  incoming connections in **System Settings → Network → Firewall**.
+- **Anywhere** — use the `tailscale` line, with [Tailscale](https://tailscale.com)
+  running on both the Mac and the phone. This also works on cellular and on captive
+  networks that block peer-to-peer traffic. `make tailscale` prints it on its own.
+
+The Tailscale lines are queried live from the local `tailscale` CLI and are skipped
+with a one-line note if it is not installed or not connected.
+
+> The desk has **no authentication**. Anyone who can reach the port can use it. That is
+> fine on a tailnet or a home LAN; do not run it on open Wi-Fi.
 
 ## Layout
 

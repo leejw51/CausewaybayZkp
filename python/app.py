@@ -263,8 +263,15 @@ textarea, input {{
 #lab-notes p, #lab-notes li, #lab-notes td, #lab-notes th {{
   color: var(--cream) !important;
 }}
-#lab-notes .katex, #lab-notes .katex-display {{
-  color: #F7ECD4;
+/* Gradio ships `.prose * {{ color: var(--body-text-color) }}`, which repaints
+   every KaTeX glyph span individually. Colouring only the .katex container is
+   therefore invisible to the glyphs — the descendants must be targeted too,
+   with !important, exactly as the p/li/td rules above do. Scoped to #lab-notes
+   because the study box renders math on light parchment, where dark ink is
+   correct. */
+#lab-notes .katex, #lab-notes .katex-display,
+#lab-notes .katex *, #lab-notes .katex-display * {{
+  color: var(--cream) !important;
 }}
 #lab-notes .katex-display {{
   overflow-x: auto;
@@ -381,7 +388,7 @@ $$
 The interactive challenge is replaced by a hash of everything the verifier would have seen:
 
 $$
-c = \\mathrm{{SHA256}}\\bigl(p,q,g,h,T,n,C,\\{{C_i\\}}, t,\\ {{t_{{0,i}}, t_{{1,i}}}}\\bigr) \\bmod q
+c = \\mathrm{{SHA256}}\\bigl(p,q,g,h,T,n,C,\\{{C_i\\}}, t,\\ \\{{t_{{0,i}}, t_{{1,i}}\\}}\\bigr) \\bmod q
 $$
 """
 

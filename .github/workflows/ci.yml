@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: ZKP tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The proof code is standard library only, so the tests need no install.
+      - name: ZKP self-tests
+        working-directory: python
+        run: python3 tests/test_age.py
+
+      - name: Lint
+        working-directory: python
+        run: |
+          pip install --quiet "ruff>=0.6.0"
+          ruff check zkp tests app.py i18n.py
+
+  love2d:
+    name: Love2D tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # love needs a display even for the test run, so it goes under xvfb;
+      # the runner has no sound card, so SDL gets the dummy audio driver.
+      - name: Install Love2D
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends love xvfb
+
+      - name: Love2D suite
+        working-directory: love2d
+        env:
+          GATE18_TEST: "1"
+          GATE18_HOME: ${{ runner.temp }}/gate18-home
+          SDL_AUDIODRIVER: dummy
+        run: xvfb-run --auto-servernum love . --test

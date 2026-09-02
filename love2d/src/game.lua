@@ -19,6 +19,9 @@ local Persist = require "src.persist"
 local Theme = require "src.theme"
 local World = require "src.world"
 local UI = require "src.ui"
+local I18n = require "src.i18n"
+local P = I18n.pick
+local T = I18n.t
 
 local COL = {
   ink = Theme.ink,
@@ -41,6 +44,7 @@ local HUD = {
   full = { 0, 6, 108, 34 },
   ori = { 0, 6, 108, 34 },
   map = { 0, 6, 108, 34 },
+  lang = { 0, 6, 108, 34 },
 }
 local HINT_WAIT = 30
 local MAX_INPUT = 24
@@ -203,12 +207,15 @@ function Game:syncMetrics()
   HUD.full[2] = math.floor((TOP - btnH) * 0.5)
   HUD.ori[2] = HUD.full[2]
   HUD.map[2] = HUD.full[2]
+  HUD.lang[2] = HUD.full[2]
   HUD.full[3], HUD.full[4] = btnW, btnH
   HUD.ori[3], HUD.ori[4] = btnW, btnH
   HUD.map[3], HUD.map[4] = btnW, btnH
+  HUD.lang[3], HUD.lang[4] = btnW, btnH
   HUD.ori[1] = W - btnW - 10
   HUD.full[1] = W - btnW * 2 - 20
   HUD.map[1] = W - btnW * 3 - 30
+  HUD.lang[1] = W - btnW * 4 - 40
 end
 
 function Game:load()
@@ -608,6 +615,19 @@ function Game:toggleHint()
   self.idle = 0
 end
 
+-- self.msg holds an i18n key or a { en=, ko=, yue= } table so the feedback
+-- line follows a language switch.
+function Game:msgText()
+  local m = self.msg
+  if m == nil or m == "" then
+    return ""
+  end
+  if type(m) == "table" then
+    return P(m)
+  end
+  return T(m)
+end
+
 function Game:submit()
   if self.state ~= "play" or self.solved then
     return
@@ -636,9 +656,9 @@ function Game:submit()
     self:save()
   else
     if self.input == "" then
-      self.msg = "Type the answer, then ENTER."
+      self.msg = "msg_empty"
     else
-      self.msg = "Not quite. Read the hint and try again. HINT again shows the answer."
+      self.msg = "msg_wrong"
       self:setHint(math.max(self.hintLevel, 1))
     end
     self.msgKind = "bad"
@@ -679,9 +699,10 @@ function Game:pixBtn(x, y, w, h, label, lit)
 end
 
 function Game:drawHud()
-  local full = Layout.fullscreen and "FULL" or "WIND"
-  local ori = PORT and "PORT" or "LAND"
-  local mapLabel = self.state == "map" and "BACK" or "MAP"
+  local full = Layout.fullscreen and T("hud_full") or T("hud_wind")
+  local ori = PORT and T("hud_port") or T("hud_land")
+  local mapLabel = self.state == "map" and T("hud_back") or T("hud_map")
+  self:pixBtn(HUD.lang[1], HUD.lang[2], HUD.lang[3], HUD.lang[4], I18n.NAMES[I18n.lang] or "EN")
   self:pixBtn(HUD.map[1], HUD.map[2], HUD.map[3], HUD.map[4], mapLabel, self.state == "map")
   self:pixBtn(HUD.full[1], HUD.full[2], HUD.full[3], HUD.full[4], full)
   self:pixBtn(HUD.ori[1], HUD.ori[2], HUD.ori[3], HUD.ori[4], ori)
@@ -755,10 +776,10 @@ function Game:drawTitle()
   neonPrint(titleF, "GATE 18", 0, ty, COL.neon, self.t, "center")
   love.graphics.setFont(subF)
   love.graphics.setColor(COL.gold[1], COL.gold[2], COL.gold[3], k)
-  love.graphics.printf("Causeway Bay", 0, ty + th + 6, W, "center")
+  love.graphics.printf(T("subtitle"), 0, ty + th + 6, W, "center")
   love.graphics.setFont(smF)
   love.graphics.setColor(COL.cream[1], COL.cream[2], COL.cream[3], k * 0.95)
-  love.graphics.printf("Prove you are an adult. Keep your birthday.", 0, ty + th + sh + 12, W, "center")
+  love.graphics.printf(T("tagline"), 0, ty + th + sh + 12, W, "center")
 
   local hx = ease.lerp(-ch, W * 0.18, k)
   sprites.draw("hero", hx, gy, { t = self.t, walk = self.intro < 1, facing = 1, h = ch })
@@ -772,32 +793,26 @@ function Game:drawTitle()
   local blink = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(self.t * 3.2))
   love.graphics.setFont(uiF)
   love.graphics.setColor(Theme.ink[1], Theme.ink[2], Theme.ink[3], blink * k)
-  love.graphics.printf("ENTER  pick a street", 12, H - bar + 10, W - 24, "center")
+  love.graphics.printf(T("title_enter"), 12, H - bar + 10, W - 24, "center")
   love.graphics.setFont(smF)
   setC(Theme.brick, 0.95 * k)
   local target = self:continueTarget()
   if target then
     local m = maps[target]
     local n = #self:clearedIds()
-    love.graphics.printf(
-      string.format("C  continue at %s   (%d/%d streets clear)", m.station, n, #maps),
-      12,
-      H - bar + 12 + uh,
-      W - 24,
-      "center"
-    )
+    love.graphics.printf(T("title_continue", m.station, n, #maps), 12, H - bar + 12 + uh, W - 24, "center")
   else
-    love.graphics.printf("7 streets. One ZKP. Type the answers.", 12, H - bar + 12 + uh, W - 24, "center")
+    love.graphics.printf(T("title_fresh"), 12, H - bar + 12 + uh, W - 24, "center")
   end
   setC(Theme.ink, 0.8 * k)
-  love.graphics.printf("1-7 jump straight in.   ESC quit.", 12, H - 16 - mh, W - 24, "center")
+  love.graphics.printf(T("title_help"), 12, H - 16 - mh, W - 24, "center")
 end
 
 function Game:drawStations(m)
   UI.bar(0, 0, W, TOP)
   local font = fontOf("station")
   local n = #maps
-  local x0, x1 = 28, HUD.map[1] - 16
+  local x0, x1 = 28, HUD.lang[1] - 16
   local span = (x1 - x0) / math.max(1, n - 1)
   local maxW = 0
   for i = 1, n do
@@ -818,7 +833,7 @@ function Game:drawStations(m)
   local labelY = pipY + 16
   local boxW = math.max(maxW, 48)
   x0 = math.max(x0, math.floor(boxW * 0.5) + 12)
-  x1 = math.min(x1, HUD.map[1] - math.floor(boxW * 0.5) - 12)
+  x1 = math.min(x1, HUD.lang[1] - math.floor(boxW * 0.5) - 12)
   span = (x1 - x0) / math.max(1, n - 1)
   if showNames and span < maxW + 4 then
     showNames = false
@@ -1026,24 +1041,18 @@ function Game:drawMap()
   love.graphics.setFont(uiF)
   setC(Theme.ink)
   love.graphics.print(string.format("%d  %s", self.mapCursor, m.station), pad + 18, py + 14)
-  local tag = cleared and "CLEAR" or (here and "HERE" or "")
+  local tag = cleared and T("clear") or (here and T("here") or "")
   if tag ~= "" then
     setC(cleared and Theme.admit or Theme.brick)
     love.graphics.printf(tag, pad, py + 14, W - pad * 2 - 18, "right")
   end
   love.graphics.setFont(smF)
   setC(Theme.navy)
-  love.graphics.print(m.name .. "  -  " .. m.title, pad + 18, py + 14 + line + 6)
+  love.graphics.print(P(m.name) .. "  -  " .. P(m.title), pad + 18, py + 14 + line + 6)
   setC(Theme.ink, 0.85)
-  local back = self.mapFrom == "play" and "ESC back" or "ESC title"
+  local back = self.mapFrom == "play" and T("esc_back") or T("esc_title")
   local nClear = #self:clearedIds()
-  love.graphics.printf(
-    string.format("ARROWS walk    ENTER go    1-7 jump    %s      %d / %d clear", back, nClear, #maps),
-    pad,
-    py + 14 + line + 6 + sub + 6,
-    W - pad * 2,
-    "center"
-  )
+  love.graphics.printf(T("map_help", back, nClear, #maps), pad, py + 14 + line + 6 + sub + 6, W - pad * 2, "center")
 end
 
 function Game:drawPlay()
@@ -1062,7 +1071,7 @@ function Game:drawPlay()
   love.graphics.pop()
 
   local labelF = fontOf("station")
-  local label = string.format("MAP %d/%d  %s", self.step, #maps, m.title)
+  local label = T("map_label", self.step, #maps, P(m.title))
   love.graphics.setFont(labelF)
   local lw = math.min(W - 24, labelF:getWidth(label) + 32)
   local lh = labelF:getHeight() + 16
@@ -1076,11 +1085,11 @@ function Game:drawPlay()
     local uiF = assets.font.ui
     local text
     if self:allCleared() then
-      text = "CLEAR   ENTER for the stamp"
+      text = T("clear_stamp")
     elseif self.step >= #maps then
-      text = "CLEAR   ENTER back to the map"
+      text = T("clear_map")
     else
-      text = "CLEAR   ENTER next street"
+      text = T("clear_next")
     end
     local tw = uiF:getWidth(text) + 32
     local th = uiF:getHeight() + 16
@@ -1109,8 +1118,9 @@ function Game:drawWorld(m, cam)
         facing = n.facing,
         h = ch,
       })
-      if math.abs(self.player.x - n.x) < ch * 1.15 and n.line ~= "" then
-        self:bubble(n.x, gy - ch - 12, n.line)
+      local line = P(n.line)
+      if math.abs(self.player.x - n.x) < ch * 1.15 and line ~= "" then
+        self:bubble(n.x, gy - ch - 12, line)
       end
     end
   end
@@ -1352,8 +1362,9 @@ function Game:drawTerminal(m)
   })[m.portrait] or "hero"
 
   local st = self:currentStage()
-  local story = (m.story or ""):gsub("—", "--"):gsub("–", "-")
-  local question = "Q: " .. (st.q or "")
+  local story = P(m.story)
+  local question = T("q_prefix") .. P(st.q)
+  local code = P(st.code)
   local shown
   if self.solved then
     shown = st.answer or st.accept[1]
@@ -1363,10 +1374,10 @@ function Game:drawTerminal(m)
     shown = self.input
   end
   local orig = {}
-  for line in (st.code .. "\n"):gmatch("(.-)\n") do
+  for line in (code .. "\n"):gmatch("(.-)\n") do
     orig[#orig + 1] = line
   end
-  local rendered = fillBlank(st.code, shown)
+  local rendered = fillBlank(code, shown)
 
   local promptY = H - helpH - promptH - 4
   -- the question sits in its own bar right above the input
@@ -1378,8 +1389,8 @@ function Game:drawTerminal(m)
   local bodyY = y + 8
   local bodyH = qY - bodyY - 6
   local hintH = 0
-  local hintText = self.hintLevel >= 2 and ("ANSWER  " .. tostring(st.answer or st.accept[1])) or "HINT"
-  local hintWhy = st.hint or ""
+  local hintText = self.hintLevel >= 2 and (T("answer") .. "  " .. tostring(st.answer or st.accept[1])) or T("hint")
+  local hintWhy = P(st.hint)
   if self.hintOn then
     local guessW = PORT and (W - pad * 2 - 24) or math.floor(W * 0.42) - 32
     local _, hlines = nameF:getWrap(hintWhy, math.max(80, guessW))
@@ -1396,8 +1407,9 @@ function Game:drawTerminal(m)
     local textWGuess = storyW - 114
     local _, lines = storyF:getWrap(story, textWGuess)
     local msgLines = 0
-    if self.msg ~= "" then
-      local _, ml = storyF:getWrap(self.msg, textWGuess)
+    local msgText = self:msgText()
+    if msgText ~= "" then
+      local _, ml = storyF:getWrap(msgText, textWGuess)
       msgLines = #ml
     end
     local need = 20 + nameF:getHeight() + 8 + (#lines + msgLines) * storyHgt + 12
@@ -1427,7 +1439,7 @@ function Game:drawTerminal(m)
   local textW = math.max(40, storyX + storyW - textX - 14)
   local nameY = PORT and (storyY + 10) or (storyY + faceH + 2)
   love.graphics.printf(
-    m.speaker,
+    P(m.speaker),
     PORT and textX or (storyX + 6),
     nameY,
     PORT and textW or nameW,
@@ -1436,11 +1448,14 @@ function Game:drawTerminal(m)
   local textY = PORT and (nameY + nameF:getHeight() + 4) or (storyY + 14)
   local innerY = textY
   local innerH = storyY + storyBoxH - innerY - 10 - (PORT and 0 or hintH)
+  -- clip to whole text lines so nothing is cut in half
+  innerH = math.max(storyHgt, math.floor(innerH / storyHgt) * storyHgt)
   local sx, sy, sw, sh = clip(textX, innerY, textW, math.max(8, innerH))
   -- feedback first (it is what just happened), then the street's story
   love.graphics.setFont(storyF)
   local usedH = 0
-  if self.msg ~= "" then
+  local msg = self:msgText()
+  if msg ~= "" then
     if self.msgKind == "ok" then
       setC(Theme.admit)
     elseif self.msgKind == "bad" then
@@ -1448,11 +1463,11 @@ function Game:drawTerminal(m)
     else
       setC(Theme.ink)
     end
-    love.graphics.printf(self.msg, textX, textY, textW, "left")
-    local _, msgLines = storyF:getWrap(self.msg, textW)
+    love.graphics.printf(msg, textX, textY, textW, "left")
+    local _, msgLines = storyF:getWrap(msg, textW)
     usedH = #msgLines * storyHgt + 8
   end
-  setC(Theme.ink, self.msg ~= "" and 0.75 or 1)
+  setC(Theme.ink, msg ~= "" and 0.75 or 1)
   love.graphics.printf(story, textX, textY + usedH, textW, "left")
   unclip(sx, sy, sw, sh)
 
@@ -1488,29 +1503,61 @@ function Game:drawTerminal(m)
   end
   love.graphics.print(head, codeX + 14, codeY + 8)
   local wrapW = codeW - 28
-  local lh = codeHgt + 2
-  love.graphics.setFont(codeF)
   local cy = codeY + 12 + fontOf("ui"):getHeight()
-  local csx, csy, csw, csh = clip(codeX + 8, cy, codeW - 16, math.max(8, codeY + codeBoxH - cy - 8))
-  local li = 0
+  local avail = codeY + codeBoxH - cy - 8
+  local codeLines = {}
   for line in (rendered .. "\n"):gmatch("(.-)\n") do
-    li = li + 1
-    if line:match("^%s*#") then
-      love.graphics.setColor(0.50, 0.82, 0.42, 1)
-    elseif orig[li] and orig[li]:find("___", 1, true) then
+    codeLines[#codeLines + 1] = line
+  end
+  -- translated comments can be wide: drop to the small code font when the
+  -- block would not fit
+  local function needed(f)
+    local h = 0
+    for _, line in ipairs(codeLines) do
+      local _, wrapped = f:getWrap(line, wrapW)
+      h = h + math.max(1, #wrapped) * (f:getHeight() + 2)
+    end
+    return h
+  end
+  if needed(codeF) > avail and fontOf("codeSm") ~= codeF then
+    codeF = fontOf("codeSm")
+  end
+  local lh = codeF:getHeight() + 2
+  love.graphics.setFont(codeF)
+  local csx, csy, csw, csh = clip(codeX + 8, cy, codeW - 16, math.max(8, avail))
+  local commentCol = { 0.50, 0.82, 0.42, 1 }
+  for li, line in ipairs(codeLines) do
+    local blankLine = orig[li] and orig[li]:find("___", 1, true)
+    local codeCol
+    if blankLine then
       if self.solved then
-        setC(Theme.admit)
+        codeCol = Theme.admit
       else
         local pulse = 0.65 + 0.35 * (0.5 + 0.5 * math.cos(self.t * 6))
-        love.graphics.setColor(Theme.coin[1], Theme.coin[2], Theme.coin[3], pulse)
+        codeCol = { Theme.coin[1], Theme.coin[2], Theme.coin[3], pulse }
       end
     else
-      love.graphics.setColor(0.92, 0.96, 0.78, 1)
+      codeCol = { 0.92, 0.96, 0.78, 1 }
     end
     local _, wrapped = codeF:getWrap(line, wrapW)
-    love.graphics.printf(line, codeX + 14, cy, wrapW, "left")
+    if line:match("^%s*#") then
+      setC(commentCol)
+      love.graphics.printf(line, codeX + 14, cy, wrapW, "left")
+    else
+      -- trailing "# what this variable means" in comment green
+      local head, tail = line:match("^(.-%S)(%s+#.*)$")
+      if head and #wrapped == 1 then
+        setC(codeCol)
+        love.graphics.print(head, codeX + 14, cy)
+        setC(commentCol)
+        love.graphics.print(tail, codeX + 14 + codeF:getWidth(head), cy)
+      else
+        setC(codeCol)
+        love.graphics.printf(line, codeX + 14, cy, wrapW, "left")
+      end
+    end
     cy = cy + math.max(1, #wrapped) * lh
-    if cy > codeY + codeBoxH - lh then
+    if cy > codeY + codeBoxH - 8 then
       break
     end
   end
@@ -1535,10 +1582,10 @@ function Game:drawTerminal(m)
   local typed
   if self.solved then
     setC(Theme.admit)
-    typed = "CLEAR   ENTER  next"
+    typed = T("clear_prompt")
   elseif self.input == "" then
     setC(Theme.cream, 0.55)
-    typed = "type the answer" .. caret
+    typed = T("type_answer") .. caret
   else
     setC(Theme.cream)
     typed = self.input .. caret
@@ -1557,21 +1604,21 @@ function Game:drawTerminal(m)
   self.actHint = { pad, btnY, btnW, btnH }
   self.actOk = { pad + btnW + 10, btnY, btnW, btnH }
   self.actNext = self.actOk
-  local hintLabel = ({ [0] = "HINT", "ANSWER", "HIDE" })[self.hintLevel] or "HINT"
+  local hintLabel = ({ [0] = T("hint"), T("answer"), T("hide") })[self.hintLevel] or T("hint")
   self:pixBtn(self.actHint[1], self.actHint[2], self.actHint[3], self.actHint[4], hintLabel, self.hintOn)
   if self.solved then
-    self:pixBtn(self.actNext[1], self.actNext[2], self.actNext[3], self.actNext[4], "NEXT", true)
+    self:pixBtn(self.actNext[1], self.actNext[2], self.actNext[3], self.actNext[4], T("next"), true)
   else
-    self:pixBtn(self.actOk[1], self.actOk[2], self.actOk[3], self.actOk[4], "OK")
+    self:pixBtn(self.actOk[1], self.actOk[2], self.actOk[3], self.actOk[4], T("ok"))
   end
   love.graphics.setFont(helpF)
   setC(Theme.cream)
   local helpX = pad + btnW * 2 + 24
-  local help = "TAB hint   ESC map"
+  local help = T("help_play")
   if self.solved then
-    help = "arrows walk   ESC map"
+    help = T("help_walk")
   elseif self.hintLevel == 1 then
-    help = "TAB again: answer   ESC map"
+    help = T("help_answer")
   end
   love.graphics.print(help, helpX, H - helpH + 4)
   love.graphics.pop()
@@ -1587,7 +1634,7 @@ function Game:drawWin()
   local innerW = W - pad * 2 - 28
   local lines = 0
   for i = 1, #maps do
-    local _, wrapped = smF:getWrap(maps[i].lesson or "", innerW - 140)
+    local _, wrapped = smF:getWrap(P(maps[i].lesson), innerW - 140)
     lines = lines + math.max(1, #wrapped)
   end
   local recapH = uh + 16 + lines * mh + #maps * 4 + mh + 24
@@ -1611,7 +1658,7 @@ function Game:drawWin()
 
   love.graphics.setFont(assets.font.subtitle)
   setC(COL.cream, k)
-  love.graphics.printf("Lucky Mart  ·  Causeway Bay", 0, PORT and 118 or 96, W, "center")
+  love.graphics.printf(T("win_title"), 0, PORT and 118 or 96, W, "center")
 
   sprites.draw("hero", W * 0.22, gy, { t = self.t, bounce = math.abs(math.sin(self.t * 4)) * 8 * k, h = ch })
   sprites.draw(
@@ -1632,7 +1679,7 @@ function Game:drawWin()
   UI.panel(pad, recapY, W - pad * 2, recapH, Theme.panel)
   love.graphics.setFont(uiF)
   setC(Theme.ink, k)
-  love.graphics.print("WHAT UNCLE WING LEARNED: age >= 18.  NOT: 25, r, sk, the bits.", pad + 14, recapY + 12)
+  love.graphics.print(T("win_head"), pad + 14, recapY + 12)
   local y = recapY + 12 + uh + 10
   love.graphics.setFont(smF)
   for i = 1, #maps do
@@ -1640,14 +1687,14 @@ function Game:drawWin()
     setC(Theme.brick, k)
     love.graphics.print(m.station, pad + 14, y)
     setC(Theme.ink, k)
-    love.graphics.printf(m.lesson or "", pad + 140, y, innerW - 140, "left")
-    local _, wrapped = smF:getWrap(m.lesson or "", innerW - 140)
+    love.graphics.printf(P(m.lesson), pad + 140, y, innerW - 140, "left")
+    local _, wrapped = smF:getWrap(P(m.lesson), innerW - 140)
     y = y + math.max(1, #wrapped) * mh + 4
   end
   local blink = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(self.t * 3))
   love.graphics.setFont(smF)
   love.graphics.setColor(Theme.ink[1], Theme.ink[2], Theme.ink[3], blink * k)
-  love.graphics.printf("ENTER  street map      ESC  title", pad, recapY + recapH - mh - 10, W - pad * 2, "center")
+  love.graphics.printf(T("win_help"), pad, recapY + recapH - mh - 10, W - pad * 2, "center")
 end
 
 -- ---------------------------------------------------------------- input
@@ -1763,6 +1810,10 @@ function Game:mousepressed(x, y, button)
   end
   local vx, vy = Layout.toVirtual(x, y)
   if not vx then
+    return
+  end
+  if inRect(vx, vy, HUD.lang) then
+    Layout.cycleLanguage()
     return
   end
   if inRect(vx, vy, HUD.map) then

@@ -205,6 +205,36 @@ local BODY = {
 
 local fontScaleKey = nil
 
+-- Korean / Chinese glyphs: Noto Sans CJK as a fallback behind the pixel fonts.
+-- The file is read once; a fallback font is made per pixel size.
+local CJK_PATH = "assets/fonts/NotoSansCJKkr-Regular.otf"
+local cjkData = nil
+local cjkFonts = {}
+
+local function cjkFont(size)
+  size = math.max(8, math.floor(size + 0.5))
+  if cjkFonts[size] then
+    return cjkFonts[size]
+  end
+  if cjkData == nil then
+    if love.filesystem.getInfo(CJK_PATH) then
+      cjkData = love.filesystem.newFileData(CJK_PATH)
+    else
+      cjkData = false
+    end
+  end
+  if not cjkData then
+    return nil
+  end
+  local ok, f = pcall(love.graphics.newFont, cjkData, size)
+  if not ok or not f then
+    return nil
+  end
+  f:setFilter("nearest", "nearest")
+  cjkFonts[size] = f
+  return f
+end
+
 local function tryFont(size, paths)
   size = math.max(8, math.floor(size + 0.5))
   local font
@@ -218,6 +248,10 @@ local function tryFont(size, paths)
   font = font or love.graphics.newFont(size)
   if font.setFilter then
     font:setFilter("nearest", "nearest")
+  end
+  local cjk = cjkFont(size)
+  if cjk and font.setFallbacks then
+    font:setFallbacks(cjk)
   end
   return font
 end
@@ -241,6 +275,10 @@ function Assets.ensureFonts(scale)
       f:release()
     end
   end
+  for _, f in pairs(cjkFonts) do
+    f:release()
+  end
+  cjkFonts = {}
   local s = scale
   Assets.font.title = tryFont(snap8(40 * s), PIXEL)
   Assets.font.subtitle = tryFont(40 * s, BODY)
@@ -248,7 +286,7 @@ function Assets.ensureFonts(scale)
   Assets.font.story = Assets.font.ui
   Assets.font.small = tryFont(30 * s, BODY)
   Assets.font.code = tryFont(28 * s, BODY)
-  Assets.font.codeSm = Assets.font.code
+  Assets.font.codeSm = tryFont(22 * s, BODY)
   Assets.font.bubble = tryFont(30 * s, BODY)
   Assets.font.station = tryFont(snap8(16 * s), PIXEL)
   Assets.font.stationSm = tryFont(snap8(8 * s), PIXEL)

@@ -77,6 +77,10 @@ function love.keypressed(key)
     Layout.toggleOrientation()
     return
   end
+  if key == "f3" then
+    Layout.cycleLanguage()
+    return
+  end
   game:keypressed(key)
 end
 

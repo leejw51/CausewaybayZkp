@@ -81,6 +81,7 @@ function Persist.saveDisplay(layout)
     event = "display",
     mode = layout.mode,
     fullscreen = layout.fullscreen and true or false,
+    lang = require("src.i18n").lang,
   })
 end
 

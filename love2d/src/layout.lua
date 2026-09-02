@@ -1,5 +1,6 @@
 local Theme = require "src.theme"
 local Persist = require "src.persist"
+local I18n = require "src.i18n"
 
 local Layout = {
   mode = "landscape",
@@ -117,12 +118,20 @@ function Layout.load()
     Layout.fullscreen = rec.fullscreen
     applied = true
   end
+  if type(rec.lang) == "string" then
+    I18n.set(rec.lang)
+  end
   return applied
 end
 
 function Layout.toggleFullscreen()
   Layout.fullscreen = not Layout.fullscreen
   Layout.pendingWindow = true
+  Layout.save()
+end
+
+function Layout.cycleLanguage()
+  I18n.cycle()
   Layout.save()
 end
 

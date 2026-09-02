@@ -1,5 +1,7 @@
 # GATE 18 — Causeway Bay (Love2D)
 
+English · 한국어 · 粵語 (F3 or the top-right button; remembered between runs).
+
 Wonder Boy + Super Mario World 16-bit beer run. Same ZKP as `python/zkp`,
 played as a quiz: seven streets, 24 blanks, type the answer. Some blanks are
 words, some are sums in a toy group small enough to do by hand
@@ -30,7 +32,7 @@ title  --ENTER-->  map  --ENTER / click / 1-7-->  play  --CLEAR, ENTER-->  next 
 - **Play**: read the story and the question, type the answer, ENTER or **OK**. Wrong answers shake and open the hint. **HINT** (TAB or the button) is two-tier: first a nudge, second the answer, third hides it. 30 s idle opens the nudge once. After the last blank the street is **CLEAR**: ENTER / SPACE / N / **NEXT** / walking off the right edge moves on. ESC, F2 or **MAP** open the map without losing the street.
 - **Win**: only when all seven streets are CLEAR, whichever order. Shows the ADMIT stamp and one lesson per street. ENTER returns to the map, ESC to the title.
 
-The answer is never printed in the code panel. Answers are matched loosely (case, spaces, quotes, `_`, `-`, `.` ignored), so `SHA-256` and `sha256` both pass.
+Every variable in a code block carries a trailing `#` comment saying what it means (p, g, h, r, C, T, delta, b_i, x, k, t, c, s, sk, pk, D ...), in the current language; the python itself is the same in every language. The answer is never printed in the code panel. Answers are matched loosely (case, spaces, quotes, `_`, `-`, `.` ignored), so `SHA-256` and `sha256` both pass.
 
 | Map | Blanks (in order) |
 | --- | --- |
@@ -44,6 +46,7 @@ The answer is never printed in the code panel. Answers are matched loosely (case
 
 ## Keys
 
+- **F3** / the language button — English → 한국어 → 粵語. Localized answers count too (건전성, 可靠性, 은닉, 隱藏 ...). CJK text uses Noto Sans CJK (`assets/fonts`, OFL) as a glyph fallback behind the pixel fonts.
 - **F2** / **MAP** — street map · **F11** / **WIND/FULL** — window / fullscreen · **F1** / **LAND/PORT** — landscape 1280×720 / portrait 720×1280. A portrait display starts in portrait; the choice is remembered.
 
 ## Persist (`~/.causewaybayzkp`)

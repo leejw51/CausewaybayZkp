@@ -46,34 +46,55 @@ return function(t)
     end
   end
 
-  t.it("every stage has a question, a blank, an answer and a hint; every map a lesson", function()
-    for _, m in ipairs(maps) do
-      t.ok(m.lesson and #m.lesson > 0, m.id .. " lesson")
-      for si, st in ipairs(m.stages) do
-        local where = m.id .. "/" .. si
-        t.ok(st.q and #st.q > 0, where .. " q")
-        t.ok(st.code:find("___", 1, true), where .. " blank")
-        t.ok(st.answer and #st.answer > 0, where .. " answer")
-        t.ok(st.hint and #st.hint > 0, where .. " hint")
-        t.ok(Game.accepts(st.answer, st.accept), where .. " answer is accepted")
-        local n = 0
-        for _ in (st.code .. "\n"):gmatch("(.-)\n") do
-          n = n + 1
-        end
-        t.ok(n <= 7, where .. " code fits (" .. n .. " lines)")
-        -- the answer must not be given away in the code itself
-        local lower = st.code:lower()
-        for line in lower:gmatch("[^\n]+") do
-          if line:find("___", 1, true) then
-            local rest = line:gsub("___", "")
-            t.ok(
-              not rest:match("#%s*" .. Game.norm(st.answer):gsub("%p", "%%%0") .. "%s*$"),
-              where .. " leaks the answer in a comment"
-            )
+  t.it("every stage has a question, a blank, an answer and a hint in every language", function()
+    local I18n = require "src.i18n"
+    for _, lang in ipairs(I18n.LANGS) do
+      for _, m in ipairs(maps) do
+        t.ok(#I18n.pick(m.lesson, lang) > 0, lang .. " " .. m.id .. " lesson")
+        t.ok(#I18n.pick(m.story, lang) > 0, lang .. " " .. m.id .. " story")
+        for si, st in ipairs(m.stages) do
+          local where = lang .. " " .. m.id .. "/" .. si
+          local code = I18n.pick(st.code, lang)
+          t.ok(#I18n.pick(st.q, lang) > 0, where .. " q")
+          t.ok(code:find("___", 1, true), where .. " blank")
+          t.ok(st.answer and #st.answer > 0, where .. " answer")
+          t.ok(#I18n.pick(st.hint, lang) > 0, where .. " hint")
+          t.ok(#I18n.pick(st.ok, lang) > 0, where .. " ok")
+          t.ok(Game.accepts(st.answer, st.accept), where .. " answer is accepted")
+          local n = 0
+          for _ in (code:gsub("\n+$", "") .. "\n"):gmatch("(.-)\n") do
+            n = n + 1
+          end
+          t.ok(n <= 7, where .. " code fits (" .. n .. " lines)")
+          -- the answer must not be given away in the code itself
+          local lower = code:lower()
+          for line in lower:gmatch("[^\n]+") do
+            if line:find("___", 1, true) then
+              local rest = line:gsub("___", "")
+              t.ok(
+                not rest:match("#%s*" .. Game.norm(st.answer):gsub("%p", "%%%0") .. "%s*$"),
+                where .. " leaks the answer in a comment"
+              )
+            end
           end
         end
       end
     end
+  end)
+
+  t.it("language cycles and falls back to English", function()
+    local I18n = require "src.i18n"
+    I18n.set("en")
+    t.eq(I18n.t("hint"), "HINT")
+    I18n.cycle()
+    t.eq(I18n.lang, "ko")
+    t.eq(I18n.t("hint"), "힌트")
+    t.eq(I18n.pick({ en = "a" }), "a", "missing translation falls back")
+    I18n.cycle()
+    t.eq(I18n.lang, "yue")
+    I18n.cycle()
+    t.eq(I18n.lang, "en")
+    t.eq(I18n.pick("plain"), "plain")
   end)
 
   t.it("answers compare loosely", function()

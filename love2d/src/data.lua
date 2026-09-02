@@ -1028,17 +1028,17 @@ c = ___(transcript) mod q    # c: 挑戰, 而家係一個 hash
         code = L(
           [[
 # python/zkp/identity.py  keygen
-___ = random_scalar()     # private key, NEVER leaves the phone
+___ = random_scalar()     # private key, stays on the phone
 pk  = pow(g, ___)         # pk: public key   g: generator
 ]],
           [[
 # python/zkp/identity.py  keygen
-___ = random_scalar()     # 개인키, 절대 폰을 떠나지 않음
+___ = random_scalar()     # 개인키, 폰에만 있음
 pk  = pow(g, ___)         # pk: 공개키   g: 생성원
 ]],
           [[
 # python/zkp/identity.py  keygen
-___ = random_scalar()     # 私鑰, 永遠唔離開部電話
+___ = random_scalar()     # 私鑰, 留喺部電話
 pk  = pow(g, ___)         # pk: 公鑰   g: 生成元
 ]]
         ),

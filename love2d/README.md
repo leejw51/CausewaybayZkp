@@ -2,7 +2,7 @@
 
 English · 한국어 · 粵語 (F3 or the top-right button; remembered between runs).
 
-Wonder Boy + Super Mario World 16-bit beer run. Same ZKP as `python/zkp`,
+A Wonder Boy-style 16-bit beer run. Same ZKP as `python/zkp`,
 played as a quiz: seven streets, 24 blanks, type the answer. Some blanks are
 words, some are sums in a toy group small enough to do by hand
 (p = 23, g = 2, h = 3 for Pedersen; p = 23, h = 2, q = 11 for Schnorr), and
@@ -28,7 +28,7 @@ title  --ENTER-->  map  --ENTER / click / 1-7-->  play  --CLEAR, ENTER-->  next 
 ```
 
 - **Title**: ENTER or click opens the street map. **C** continues from `progress.jsonl`. 1–7 jump straight in. ESC quits.
-- **Map**: a Super Mario World overworld of Causeway Bay. Seven level dots on a dotted path; Alex walks the path with the ARROW keys (one dot per press), ENTER or a click on a dot starts that street, 1–7 jump. Cleared dots turn green with a star, the street you left shows **HERE**, and the box at the bottom names the street under Alex. ESC goes back. The backdrops `assets/map_bg.png` / `map_bg_p.png` were generated with Higgsfield's auto image model (Grok's image model is not in that catalog); without them the map draws its own hills.
+- **Map**: a 16-bit overworld of Causeway Bay. Seven level dots on a dotted path; Alex walks the path with the ARROW keys (one dot per press), ENTER or a click on a dot starts that street, 1–7 jump. Cleared dots turn green with a star, the street you left shows **HERE**, and the box at the bottom names the street under Alex. ESC goes back. The scene backdrops (`assets/bg_*.png`, `title_bg.png`) were generated with Grok (xAI `grok-imagine-image-quality`), the overworld backdrops `map_bg*.png` with Higgsfield's auto model; without them the map draws its own hills. No third-party game characters appear in any asset.
 - **Play**: read the story and the question, type the answer, ENTER or **OK**. Wrong answers shake and open the hint. **HINT** (TAB or the button) is two-tier: first a nudge, second the answer, third hides it. 30 s idle opens the nudge once. After the last blank the street is **CLEAR**: ENTER / SPACE / N / **NEXT** / walking off the right edge moves on. ESC, F2 or **MAP** open the map without losing the street.
 - **Win**: only when all seven streets are CLEAR, whichever order. Shows the ADMIT stamp and one lesson per street. ENTER returns to the map, ESC to the title.
 

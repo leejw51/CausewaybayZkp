@@ -339,7 +339,7 @@ function Game:mapPanelH()
 end
 
 -- Level dots, in virtual coordinates. Landscape: a zig-zag left to right.
--- Portrait: a zig-zag from the bottom up, Super Mario World style.
+-- Portrait: a zig-zag from the bottom up.
 function Game:mapNodes()
   local nodes = {}
   local n = #maps
@@ -773,6 +773,9 @@ function Game:drawTitle()
   local th, sh, uh, mh = titleF:getHeight(), subF:getHeight(), uiF:getHeight(), smF:getHeight()
 
   local ty = ease.lerp(PORT and 28 or 20, PORT and 56 or 36, k)
+  -- dark band so the title reads over the neon signs
+  love.graphics.setColor(0.02, 0.02, 0.10, 0.62 * k)
+  love.graphics.rectangle("fill", 0, ty - 14, W, th + sh + mh + 40)
   neonPrint(titleF, "GATE 18", 0, ty, COL.neon, self.t, "center")
   love.graphics.setFont(subF)
   love.graphics.setColor(COL.gold[1], COL.gold[2], COL.gold[3], k)
@@ -934,8 +937,8 @@ function Game:drawOverworldBg()
   love.graphics.rectangle("fill", 0, 0, W, H)
 end
 
--- The street picker as a Super Mario World overworld: a dotted path across
--- Causeway Bay, one level dot per street, Alex standing on the current one.
+-- The street picker as a 16-bit overworld: a dotted path across Causeway
+-- Bay, one level dot per street, Alex standing on the current one.
 function Game:drawMap()
   local k = ease.expOut(math.min(1, self.mapK))
   self:drawOverworldBg()
@@ -1142,7 +1145,7 @@ function Game:drawWorld(m, cam)
     local a = 0.4 + 0.6 * ease.cosine((math.sin(self.t * 3) + 1) * 0.5)
     love.graphics.setColor(Theme.admit[1], Theme.admit[2], Theme.admit[3], a)
     love.graphics.rectangle("fill", gx, gy - ch * 0.9, 10, ch * 0.9)
-    sprites.item("ui_star", gx + 5, gy - ch - 8, 1, self.t)
+    star(gx + 5, gy - ch - 14, 16, Theme.coin)
   end
 end
 
@@ -1656,9 +1659,12 @@ function Game:drawWin()
   love.graphics.printf("ADMIT", -80, 18, 160, "center")
   love.graphics.pop()
 
+  local subY = PORT and 118 or 96
+  love.graphics.setColor(0.02, 0.02, 0.10, 0.55 * k)
+  love.graphics.rectangle("fill", 0, subY - 6, W, assets.font.subtitle:getHeight() + 12)
   love.graphics.setFont(assets.font.subtitle)
   setC(COL.cream, k)
-  love.graphics.printf(T("win_title"), 0, PORT and 118 or 96, W, "center")
+  love.graphics.printf(T("win_title"), 0, subY, W, "center")
 
   sprites.draw("hero", W * 0.22, gy, { t = self.t, bounce = math.abs(math.sin(self.t * 4)) * 8 * k, h = ch })
   sprites.draw(

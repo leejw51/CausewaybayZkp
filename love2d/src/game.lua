@@ -20,6 +20,7 @@ local Theme = require "src.theme"
 local World = require "src.world"
 local UI = require "src.ui"
 local I18n = require "src.i18n"
+local SFX = require "src.sfx"
 local P = I18n.pick
 local T = I18n.t
 
@@ -220,6 +221,7 @@ end
 
 function Game:load()
   assets.load()
+  SFX.warm()
   love.keyboard.setKeyRepeat(true)
   love.graphics.setBackgroundColor(Theme.sky)
   self:ingestProgress(Persist.loadProgress())
@@ -329,6 +331,7 @@ function Game:enterMap(from)
   self.mapHeroX, self.mapHeroY = nil, nil
   self.mapWalking = false
   self:burst(W * 0.5, H * 0.45, 18)
+  SFX.play("open")
 end
 
 -- ---------------------------------------------------------------- overworld
@@ -396,6 +399,7 @@ function Game:updateMap(dt)
   if dist <= step then
     self.mapHeroX, self.mapHeroY = tx, ty
     self.mapHeroAt = nxt
+    SFX.play("step")
   else
     self.mapHeroX = self.mapHeroX + dx / dist * step
     self.mapHeroY = self.mapHeroY + dy / dist * step
@@ -403,6 +407,7 @@ function Game:updateMap(dt)
 end
 
 function Game:leaveMap()
+  SFX.play("back")
   if self.mapFrom == "play" then
     self.state = "play"
     self.swallowFrame = self.frame
@@ -413,7 +418,8 @@ function Game:leaveMap()
 end
 
 -- Start (or restart) street i. stage restores a saved position.
-function Game:enterPlay(i, stage)
+-- quiet: no "select" blip (advance plays its own sweep)
+function Game:enterPlay(i, stage, quiet)
   i = math.max(1, math.min(#maps, tonumber(i) or 1))
   local resumeSame = self.state == "map" and self.mapFrom == "play" and i == self.step
   if resumeSame then
@@ -427,6 +433,9 @@ function Game:enterPlay(i, stage)
   self.state = "play"
   self.fade = 1
   self.swallowFrame = self.frame
+  if not quiet then
+    SFX.play("select")
+  end
   self:save()
 end
 
@@ -459,6 +468,7 @@ end
 function Game:enterWin()
   self.state = "win"
   self.winT = 0
+  SFX.play("win")
   self.fade = 1
   self:burst(W * 0.5, H * 0.4, 80)
   self:save()
@@ -621,6 +631,7 @@ end
 -- HINT cycles: nudge -> answer -> hidden.
 function Game:toggleHint()
   self:setHint((self.hintLevel + 1) % 3)
+  SFX.play(self.hintLevel > 0 and "hint" or "back")
   self.idle = 0
 end
 
@@ -650,12 +661,14 @@ function Game:submit()
     self.idle = 0
     self:burst(W * 0.5, TOP + SCENE_H * 0.45, 36)
     if self.stage < #m.stages then
+      SFX.play(st.answer == "DENY" and "deny" or "ok")
       self.stage = self.stage + 1
       self.input = ""
       self:setHint(0)
       self.hintAuto = false
     else
       self.solved = true
+      SFX.play("clear")
       self.input = ""
       self:setHint(0)
       self:markClear(self.step)
@@ -671,6 +684,7 @@ function Game:submit()
       self:setHint(math.max(self.hintLevel, 1))
     end
     self.msgKind = "bad"
+    SFX.play("bad")
     self.shake = 10
     self.flashKind = "bad"
     self.flash = 0.6
@@ -692,7 +706,8 @@ function Game:advance()
     self:enterMap("play")
     return
   end
-  self:enterPlay(self.step + 1)
+  SFX.play("next")
+  self:enterPlay(self.step + 1, nil, true)
 end
 
 -- ---------------------------------------------------------------- draw
@@ -1759,8 +1774,10 @@ function Game:keypressed(key)
       self:leaveMap()
     elseif key == "left" or key == "up" or key == "a" or key == "w" or key == "h" or key == "k" then
       self.mapCursor = (self.mapCursor - 2) % #maps + 1
+      SFX.play("move")
     elseif key == "right" or key == "down" or key == "d" or key == "s" or key == "l" or key == "j" then
       self.mapCursor = self.mapCursor % #maps + 1
+      SFX.play("move")
     elseif key == "return" or key == "space" or key == "kpenter" then
       self:enterPlay(self.mapCursor)
     else
@@ -1787,6 +1804,7 @@ function Game:keypressed(key)
   elseif key == "backspace" then
     if #self.input > 0 then
       self.input = self.input:sub(1, -2)
+      SFX.play("type")
     end
     self.idle = 0
   elseif key == "return" or key == "kpenter" then
@@ -1817,6 +1835,7 @@ function Game:textinput(text)
   if #self.input < MAX_INPUT then
     self.input = self.input .. text
     self.idle = 0
+    SFX.play("type")
   end
 end
 

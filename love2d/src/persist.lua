@@ -82,6 +82,7 @@ function Persist.saveDisplay(layout)
     mode = layout.mode,
     fullscreen = layout.fullscreen and true or false,
     lang = require("src.i18n").lang,
+    sound = require("src.sfx").enabled,
   })
 end
 

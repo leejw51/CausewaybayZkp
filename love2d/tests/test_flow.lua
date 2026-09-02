@@ -82,6 +82,18 @@ return function(t)
     end
   end)
 
+  t.it("every sound effect renders", function()
+    local SFX = require "src.sfx"
+    t.ok(#SFX.names >= 12, "sound table")
+    for _, n in ipairs(SFX.names) do
+      SFX.play(n)
+    end
+    t.eq(SFX.ok, true, "no synth or audio errors")
+    SFX.set(false)
+    SFX.play("ok")
+    SFX.set(true)
+  end)
+
   t.it("language cycles and falls back to English", function()
     local I18n = require "src.i18n"
     I18n.set("en")

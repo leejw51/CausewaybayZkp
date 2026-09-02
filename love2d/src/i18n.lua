@@ -31,9 +31,9 @@ local S = {
     yue = "7條街，一個ZKP。打答案。",
   },
   title_help = {
-    en = "1-7 jump straight in.   F3 language.   ESC quit.",
-    ko = "1-7 바로 이동.   F3 언어.   ESC 종료.",
-    yue = "1-7 直接跳去。  F3 語言。  ESC 離開。",
+    en = "1-7 jump straight in.   F3 language.   F4 sound.   ESC quit.",
+    ko = "1-7 바로 이동.   F3 언어.   F4 소리.   ESC 종료.",
+    yue = "1-7 直接跳去。  F3 語言。  F4 聲音。  ESC 離開。",
   },
   clear = { en = "CLEAR", ko = "클리어", yue = "完成" },
   here = { en = "HERE", ko = "여기", yue = "而家喺度" },

@@ -1,6 +1,7 @@
 local Theme = require "src.theme"
 local Persist = require "src.persist"
 local I18n = require "src.i18n"
+local SFX = require "src.sfx"
 
 local Layout = {
   mode = "landscape",
@@ -121,10 +122,14 @@ function Layout.load()
   if type(rec.lang) == "string" then
     I18n.set(rec.lang)
   end
+  if type(rec.sound) == "boolean" then
+    SFX.set(rec.sound)
+  end
   return applied
 end
 
 function Layout.toggleFullscreen()
+  SFX.play("toggle")
   Layout.fullscreen = not Layout.fullscreen
   Layout.pendingWindow = true
   Layout.save()
@@ -132,10 +137,17 @@ end
 
 function Layout.cycleLanguage()
   I18n.cycle()
+  SFX.play("lang")
+  Layout.save()
+end
+
+function Layout.toggleSound()
+  SFX.toggle()
   Layout.save()
 end
 
 function Layout.toggleOrientation()
+  SFX.play("toggle")
   Layout.mode = Layout.mode == "landscape" and "portrait" or "landscape"
   Layout.pendingWindow = true
   Layout.save()

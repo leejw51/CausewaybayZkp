@@ -81,6 +81,10 @@ function love.keypressed(key)
     Layout.cycleLanguage()
     return
   end
+  if key == "f4" then
+    Layout.toggleSound()
+    return
+  end
   game:keypressed(key)
 end
 

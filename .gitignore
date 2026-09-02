@@ -10,4 +10,8 @@ venv/
 python/assets/*.png
 .gate18.pid
 .gate18.log
+.gate18-love.pid
+.gate18-love.log
+love2d/.test-home/
+love2d/.drive-home/
 .ruff_cache/

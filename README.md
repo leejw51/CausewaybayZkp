@@ -17,7 +17,19 @@ What the gate learns: this envelope was sealed by the ID office for the person h
 
 The ID office key here is a demo key made at start-up; a real deployment has a long-lived one whose public half every gate is configured with.
 
-## Run
+## Play it (Love2D)
+
+Wonder Boy / Super Mario World 16-bit game of the same protocol.
+
+```bash
+brew install love
+cd love2d
+love .
+```
+
+Setup is written as JSONL to `~/.causewaybayzkp/setup.jsonl`. F11 fullscreen, F1 portrait/landscape. Details in `love2d/README.md`.
+
+## Run the study desk
 
 ```bash
 cd python

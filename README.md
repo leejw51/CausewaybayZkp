@@ -4,6 +4,11 @@ Prove you are 18 or over **without revealing your age**. No Circom, snarkjs, ark
 
 ## Protocol (study version)
 
+Everything runs in a **Schnorr group**: the 256-bit prime-order subgroup of the integers modulo a 259-bit prime \(p\).
+A group element is an ordinary integer, \(g^{x}\) is `pow(g, x, p)`, and there are **no elliptic curves anywhere** in this
+repo. ECDSA and Ed25519 run the same protocols in a different group, where an element is an \((x, y)\) point and the
+operation is chord-and-tangent point addition. The algebra below is the same either way; only the group changes.
+
 1. **Pedersen commitment** \(C = g^{age}\, h^{r}\) hides the age.
 2. **Range proof by bits.** \(\delta = age - 18\) is 8 bits. Each bit is committed and proven to be 0 or 1 (Schnorr OR).
 3. **Consistency Schnorr** shows those bits really sum to \(age - 18\).

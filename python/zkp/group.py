@@ -8,6 +8,18 @@ with |G| = q, both p and q prime, q | (p-1). Discrete log in G is
 assumed hard. All exponents are taken modulo q; all group elements
 live in 1..p-1.
 
+This is NOT an elliptic curve. Every element is an ordinary integer,
+the group operation is multiplication mod p, and g^k is literally
+pow(g, k, p): repeated integer multiplication. Curve systems (ECDSA,
+Ed25519, secp256k1) run these same protocols in a different group,
+where an element is an (x, y) point and the operation is chord-and-
+tangent point addition. The protocol algebra is identical; only the
+group changes. Integers mod p are used here because pow() ships with
+Python and every step can be checked by hand.
+
+Sizes: p is 259 bits (33 bytes), q is 256 bits (32 bytes), so a group
+element is a 33-byte integer and a scalar is a 32-byte integer.
+
 Parameters were generated locally (nothing-up-my-sleeve generators:
 g and h are hash-to-subgroup, so nobody knows log_g(h)). That unknown
 discrete log is what makes Pedersen commitments binding.

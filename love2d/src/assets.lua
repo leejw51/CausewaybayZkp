@@ -247,9 +247,11 @@ local function tryFont(size, paths)
   if font.setFilter then
     font:setFilter("nearest", "nearest")
   end
-  -- Press Start 2P fills its whole em; Noto's CJK glyphs sit at ~70% of
-  -- theirs, so the fallback for pixel fonts is made larger to match.
-  local cjk = cjkFont(paths == PIXEL and size * 1.45 or size)
+  -- Measured against the line boxes (see tests/drive and the font probe):
+  -- Press Start 2P fills its em, so its CJK fallback is 1.25x to match the
+  -- caps; VT323 sits low in its box, so its fallback is 0.8x to keep CJK
+  -- glyphs inside the 30 px line (Noto at 1.0x pokes out and overlaps).
+  local cjk = cjkFont(paths == PIXEL and size * 1.25 or size * 0.8)
   if cjk and font.setFallbacks then
     font:setFallbacks(cjk)
   end

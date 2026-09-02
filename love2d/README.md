@@ -46,7 +46,7 @@ Every variable in a code block carries a trailing `#` comment saying what it mea
 
 ## Keys
 
-- **F3** / the language button — English → 한국어 → 粵語. Localized answers count too (건전성, 可靠性, 은닉, 隱藏 ...). CJK text uses Noto Sans CJK (`assets/fonts`, OFL) as a glyph fallback behind the pixel fonts.
+- **F3** / the language button — English → 한국어 → 粵語. Localized answers count too (건전성, 可靠性, 은닉, 隱藏 ...). CJK text uses Noto Sans CJK (`assets/fonts`, OFL) as a glyph fallback behind the pixel fonts. The shipped file is a 4 MB subset (all Hangul, common Traditional Chinese incl. HKSCS Cantonese, CJK punctuation); `tools/subset_cjk.py` regenerates it from the full font.
 - **F4** — sound on/off (remembered). Every effect is synthesized at load from square, triangle, saw and noise waves at 8-bit depth: key blips, map steps, a rising arpeggio for a right answer, a falling buzz for a wrong one, a DENY thud, a street-clear fanfare and a win jingle. No audio files.
 - **F2** / **MAP** — street map · **F11** / **WIND/FULL** — window / fullscreen · **F1** / **LAND/PORT** — landscape 1280×720 / portrait 720×1280. A portrait display starts in portrait; the choice is remembered.
 

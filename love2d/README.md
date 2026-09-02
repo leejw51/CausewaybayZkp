@@ -52,7 +52,7 @@ Every variable in a code block carries a trailing `#` comment saying what it mea
 
 ## Persist (`~/.causewaybayzkp`)
 
-JSONL, one object per line (same idea as Jarvis2):
+JSONL, one object per line:
 
 | file | what |
 | --- | --- |

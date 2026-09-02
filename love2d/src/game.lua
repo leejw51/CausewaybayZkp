@@ -173,6 +173,10 @@ function Game.new()
   g.mapCursor = 1
   g.mapFrom = "title"
   g.mapK = 0
+  g.mapHeroAt = 1 -- node Alex is standing on (or leaving)
+  g.mapHeroX, g.mapHeroY = nil, nil
+  g.mapHeroFacing = 1
+  g.mapWalking = false
   g.mapHits = {}
   g.stationHits = {}
   g.mapBtn = nil
@@ -314,7 +318,72 @@ function Game:enterMap(from)
   else
     self.mapCursor = self:firstOpen()
   end
+  self.mapHeroAt = self.mapCursor
+  self.mapHeroX, self.mapHeroY = nil, nil
+  self.mapWalking = false
   self:burst(W * 0.5, H * 0.45, 18)
+end
+
+-- ---------------------------------------------------------------- overworld
+
+-- Height of the level-name box at the bottom of the overworld.
+function Game:mapPanelH()
+  return fontOf("ui"):getHeight() + fontOf("small"):getHeight() * 2 + 44
+end
+
+-- Level dots, in virtual coordinates. Landscape: a zig-zag left to right.
+-- Portrait: a zig-zag from the bottom up, Super Mario World style.
+function Game:mapNodes()
+  local nodes = {}
+  local n = #maps
+  local panelH = self:mapPanelH()
+  if PORT then
+    local xs = { 0.26, 0.70, 0.30, 0.72, 0.28, 0.70, 0.42 }
+    local y0, y1 = TOP + 90, H - panelH - 70
+    for i = 1, n do
+      local f = (i - 1) / math.max(1, n - 1)
+      nodes[i] = { x = W * (xs[i] or 0.5), y = ease.lerp(y1, y0, f) }
+    end
+  else
+    local ys = { 0.76, 0.40, 0.68, 0.30, 0.64, 0.36, 0.62 }
+    local y0, y1 = TOP + 50, H - panelH - 56
+    for i = 1, n do
+      local f = (i - 1) / math.max(1, n - 1)
+      nodes[i] = { x = ease.lerp(W * 0.09, W * 0.91, f), y = ease.lerp(y0, y1, ys[i] or 0.5) }
+    end
+  end
+  return nodes
+end
+
+-- Alex walks the dotted path one node at a time toward the cursor.
+function Game:updateMap(dt)
+  self.mapK = math.min(1, self.mapK + dt * 3.2)
+  local nodes = self:mapNodes()
+  local at = nodes[self.mapHeroAt]
+  if not self.mapHeroX then
+    self.mapHeroX, self.mapHeroY = at.x, at.y
+  end
+  if self.mapHeroAt == self.mapCursor then
+    self.mapHeroX, self.mapHeroY = at.x, at.y
+    self.mapWalking = false
+    return
+  end
+  local nxt = self.mapHeroAt + (self.mapCursor > self.mapHeroAt and 1 or -1)
+  local tx, ty = nodes[nxt].x, nodes[nxt].y
+  local dx, dy = tx - self.mapHeroX, ty - self.mapHeroY
+  local dist = math.sqrt(dx * dx + dy * dy)
+  local step = (PORT and 460 or 420) * dt
+  self.mapWalking = true
+  if math.abs(dx) > 1 then
+    self.mapHeroFacing = dx > 0 and 1 or -1
+  end
+  if dist <= step then
+    self.mapHeroX, self.mapHeroY = tx, ty
+    self.mapHeroAt = nxt
+  else
+    self.mapHeroX = self.mapHeroX + dx / dist * step
+    self.mapHeroY = self.mapHeroY + dy / dist * step
+  end
 end
 
 function Game:leaveMap()
@@ -457,7 +526,7 @@ function Game:update(dt)
   if self.state == "title" then
     self:updateTitle(dt)
   elseif self.state == "map" then
-    self.mapK = math.min(1, self.mapK + dt * 3.2)
+    self:updateMap(dt)
   elseif self.state == "play" then
     self:updatePlay(dt)
   else
@@ -787,92 +856,192 @@ function Game:drawStations(m)
   end
 end
 
--- The street picker. A full screen, not a popup: the title backdrop dimmed,
--- one row per street, a cursor, CLEAR badges.
+local function star(x, y, r, col)
+  local pts = {}
+  for i = 0, 9 do
+    local a = -math.pi / 2 + i * math.pi / 5
+    local rr = (i % 2 == 0) and r or r * 0.45
+    pts[#pts + 1] = x + math.cos(a) * rr
+    pts[#pts + 1] = y + math.sin(a) * rr
+  end
+  setC(Theme.ink)
+  love.graphics.setLineWidth(3)
+  love.graphics.polygon("line", pts)
+  love.graphics.setLineWidth(1)
+  setC(col)
+  love.graphics.polygon("fill", pts)
+end
+
+-- Outlined pixel text, readable on any backdrop.
+local function shadowText(font, text, x, y, w, align, col)
+  love.graphics.setFont(font)
+  setC(Theme.ink)
+  for _, d in ipairs({ { 2, 2 }, { -2, 2 }, { 2, -2 }, { -2, -2 }, { 0, 2 }, { 2, 0 } }) do
+    love.graphics.printf(text, x + d[1], y + d[2], w, align)
+  end
+  setC(col)
+  love.graphics.printf(text, x, y, w, align)
+end
+
+-- Hand-drawn overworld when assets/map_bg*.png is missing.
+function Game:drawOverworldFallback()
+  setC(Theme.sky)
+  love.graphics.rectangle("fill", 0, 0, W, H)
+  -- far hills
+  for i = 0, 6 do
+    local hx = i * W / 5 - W * 0.1 + math.sin(i * 3.1) * 40
+    love.graphics.setColor(0.16, 0.62, 0.30, 1)
+    love.graphics.ellipse("fill", hx, H * 0.55, W * 0.22, H * 0.20)
+  end
+  setC(Theme.grass)
+  love.graphics.rectangle("fill", 0, H * 0.52, W, H)
+  love.graphics.setColor(0.10, 0.55, 0.22, 1)
+  for i = 0, 8 do
+    love.graphics.ellipse("fill", i * W / 7 + 40, H * 0.55 + (i % 3) * 30, 70, 26)
+  end
+  -- water at the bottom
+  love.graphics.setColor(0.18, 0.36, 0.86, 1)
+  love.graphics.rectangle("fill", 0, H * 0.92, W, H * 0.08)
+end
+
+function Game:drawOverworldBg()
+  local img = assets.picture("map_bg", PORT)
+  if not img then
+    self:drawOverworldFallback()
+    return
+  end
+  local iw, ih = img:getWidth(), img:getHeight()
+  local sc = math.max(W / iw, H / ih)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(img, (W - iw * sc) * 0.5, (H - ih * sc) * 0.5, 0, sc, sc)
+  -- night haze so dots and labels pop
+  love.graphics.setColor(0.02, 0.02, 0.10, 0.22)
+  love.graphics.rectangle("fill", 0, 0, W, H)
+end
+
+-- The street picker as a Super Mario World overworld: a dotted path across
+-- Causeway Bay, one level dot per street, Alex standing on the current one.
 function Game:drawMap()
   local k = ease.expOut(math.min(1, self.mapK))
-  self:drawBg("title_bg", 0, 0, W, H, "title")
-  love.graphics.setColor(0.02, 0.02, 0.08, 0.78)
-  love.graphics.rectangle("fill", 0, 0, W, H)
-
-  local uiF = fontOf("ui")
-  local smF = fontOf("small")
-  local line = uiF:getHeight()
-  local sub = smF:getHeight()
-  local rowH = line + sub + 23
-  local headH = line + 30
-  local footH = sub + 18
-  local pad = PORT and 12 or 24
-  local boxW = math.min(W - pad * 2, 840)
-  local topY = TOP + 6
-  local maxH = H - topY - pad
-  local boxH = headH + rowH * #maps + footH + 12
-  if boxH > maxH then
-    rowH = math.max(line + 22, math.floor((maxH - headH - footH - 12) / #maps))
-    boxH = headH + rowH * #maps + footH + 12
+  self:drawOverworldBg()
+  -- clouds drifting behind everything
+  for i = 1, 4 do
+    local cx = ((self.t * (14 + i * 5) + i * 337) % (W + 240)) - 120
+    local cy = TOP + 30 + (i * 53) % 120
+    love.graphics.setColor(1, 1, 1, 0.85)
+    love.graphics.ellipse("fill", cx, cy, 46, 16)
+    love.graphics.ellipse("fill", cx - 22, cy + 6, 26, 12)
+    love.graphics.ellipse("fill", cx + 26, cy + 6, 30, 13)
   end
-  local boxX = math.floor((W - boxW) * 0.5)
-  local boxY = math.floor(topY + math.max(0, (maxH - boxH) * 0.5) + (1 - k) * 28)
-  UI.panel(boxX, boxY, boxW, boxH, Theme.panel)
 
-  love.graphics.setFont(uiF)
-  setC(Theme.ink, k)
-  love.graphics.printf("PICK A STREET", boxX, boxY + 14, boxW, "center")
-  love.graphics.setFont(smF)
-  setC(Theme.brick, k)
-  local n = #self:clearedIds()
-  love.graphics.printf(string.format("%d / %d clear", n, #maps), boxX, boxY + 10, boxW - 22, "right")
+  local nodes = self:mapNodes()
+  local n = #maps
+  local labelF = PORT and fontOf("stationSm") or fontOf("station")
 
+  -- dotted path; the stretch after a cleared street lights up gold
+  for i = 1, n - 1 do
+    local a, b = nodes[i], nodes[i + 1]
+    local dx, dy = b.x - a.x, b.y - a.y
+    local len = math.sqrt(dx * dx + dy * dy)
+    local steps = math.max(2, math.floor(len / 16))
+    local lit = self:isCleared(i)
+    for j = 1, steps - 1 do
+      local f = j / steps
+      local px, py = a.x + dx * f, a.y + dy * f
+      setC(Theme.ink)
+      love.graphics.circle("fill", px, py, 5)
+      setC(lit and Theme.coin or Theme.panel, lit and 1 or 0.85)
+      love.graphics.circle("fill", px, py, 3.5)
+    end
+  end
+
+  -- level dots
   self.mapHits = {}
-  local innerX = boxX + 14
-  local innerW = boxW - 28
-  local y = boxY + headH
-  local showSub = rowH >= line + sub + 23
-  for i = 1, #maps do
+  for i = 1, n do
     local m = maps[i]
+    local nd = nodes[i]
     local cleared = self:isCleared(i)
     local here = self.mapFrom == "play" and i == self.step
-    local cursor = i == self.mapCursor
-    local h = rowH - 8
-    local showSubRow = showSub and h >= line + sub + 15
-    local hit = Layout.hit(innerX, y, innerW, h)
-    local fill = Theme.cream
-    if cursor then
-      fill = Theme.coin
-    elseif hit then
-      fill = { 0.98, 0.90, 0.62, 1 }
+    -- landmarks
+    if m.id == "office" then
+      sprites.item("item_envelope", nd.x - 40, nd.y - 34, 44, -0.15)
+    elseif m.id == "beer" then
+      sprites.item("item_beer", nd.x - 42, nd.y - 36, 48, 0.1)
     end
-    UI.panel(innerX, y, innerW, h, fill)
-    local tx = innerX + 18
-    local ty = showSubRow and (y + 10) or (y + math.max(8, math.floor((h - line) * 0.5)))
-    love.graphics.setFont(uiF)
     setC(Theme.ink)
-    love.graphics.print(string.format("%s%d  %s", cursor and "> " or "  ", i, m.station), tx, ty)
-    if showSubRow then
-      love.graphics.setFont(smF)
-      setC(Theme.dim)
-      love.graphics.print(m.name .. "  -  " .. m.title, tx + 28, ty + line + 1)
-    end
-    love.graphics.setFont(uiF)
+    love.graphics.circle("fill", nd.x, nd.y, 17)
+    setC(cleared and Theme.admit or Theme.red)
+    love.graphics.circle("fill", nd.x, nd.y, 13)
+    love.graphics.setColor(1, 1, 1, 0.55)
+    love.graphics.circle("fill", nd.x - 4, nd.y - 5, 4)
     if cleared then
-      setC(Theme.admit)
-      love.graphics.printf("CLEAR", innerX, ty, innerW - 18, "right")
-    elseif here then
-      setC(Theme.brick)
-      love.graphics.printf("HERE", innerX, ty, innerW - 18, "right")
+      star(nd.x + 16, nd.y - 16, 11, Theme.coin)
     end
-    self.mapHits[i] = { innerX, y, innerW, h }
-    y = y + rowH
+    if here and not cleared then
+      love.graphics.setColor(1, 1, 1, 0.6 + 0.4 * math.sin(self.t * 5))
+      love.graphics.circle("line", nd.x, nd.y, 20)
+    end
+    local lw = 140
+    shadowText(
+      labelF,
+      string.format("%d %s", i, m.station),
+      nd.x - lw * 0.5,
+      nd.y + 22,
+      lw,
+      "center",
+      i == self.mapCursor and Theme.coin or Theme.cream
+    )
+    self.mapHits[i] = { nd.x - 36, nd.y - 40, 72, 84 }
   end
 
+  -- Alex on the path
+  if self.mapHeroX then
+    local hh = PORT and 64 or 56
+    sprites.draw("hero", self.mapHeroX, self.mapHeroY + 6, {
+      t = self.t,
+      facing = self.mapHeroFacing,
+      walk = self.mapWalking,
+      h = hh,
+    })
+    if not self.mapWalking then
+      -- bouncing arrow over the chosen street
+      local ay = self.mapHeroY - hh - 22 + math.sin(self.t * 6) * 5
+      setC(Theme.ink)
+      love.graphics.polygon("fill", self.mapHeroX - 12, ay - 14, self.mapHeroX + 12, ay - 14, self.mapHeroX, ay)
+      setC(Theme.coin)
+      love.graphics.polygon("fill", self.mapHeroX - 8, ay - 12, self.mapHeroX + 8, ay - 12, self.mapHeroX, ay - 3)
+    end
+  end
+
+  -- level-name box
+  local uiF, smF = fontOf("ui"), fontOf("small")
+  local line, sub = uiF:getHeight(), smF:getHeight()
+  local pad = PORT and 10 or 24
+  local panelH = self:mapPanelH()
+  local py = H - panelH - 8 + (1 - k) * 40
+  UI.panel(pad, py, W - pad * 2, panelH, Theme.panel)
+  local m = maps[self.mapCursor]
+  local cleared = self:isCleared(self.mapCursor)
+  local here = self.mapFrom == "play" and self.mapCursor == self.step
+  love.graphics.setFont(uiF)
+  setC(Theme.ink)
+  love.graphics.print(string.format("%d  %s", self.mapCursor, m.station), pad + 18, py + 14)
+  local tag = cleared and "CLEAR" or (here and "HERE" or "")
+  if tag ~= "" then
+    setC(cleared and Theme.admit or Theme.brick)
+    love.graphics.printf(tag, pad, py + 14, W - pad * 2 - 18, "right")
+  end
   love.graphics.setFont(smF)
+  setC(Theme.navy)
+  love.graphics.print(m.name .. "  -  " .. m.title, pad + 18, py + 14 + line + 6)
   setC(Theme.ink, 0.85)
   local back = self.mapFrom == "play" and "ESC back" or "ESC title"
+  local nClear = #self:clearedIds()
   love.graphics.printf(
-    "UP / DOWN choose    ENTER go    1-7 jump    " .. back,
-    boxX,
-    boxY + boxH - footH - 2,
-    boxW,
+    string.format("ARROWS walk    ENTER go    1-7 jump    %s      %d / %d clear", back, nClear, #maps),
+    pad,
+    py + 14 + line + 6 + sub + 6,
+    W - pad * 2,
     "center"
   )
 end
@@ -1525,9 +1694,9 @@ function Game:keypressed(key)
   if st == "map" then
     if key == "escape" then
       self:leaveMap()
-    elseif key == "up" or key == "w" or key == "k" then
+    elseif key == "left" or key == "up" or key == "a" or key == "w" or key == "h" or key == "k" then
       self.mapCursor = (self.mapCursor - 2) % #maps + 1
-    elseif key == "down" or key == "s" or key == "j" then
+    elseif key == "right" or key == "down" or key == "d" or key == "s" or key == "l" or key == "j" then
       self.mapCursor = self.mapCursor % #maps + 1
     elseif key == "return" or key == "space" or key == "kpenter" then
       self:enterPlay(self.mapCursor)

@@ -26,7 +26,7 @@ title  --ENTER-->  map  --ENTER / click / 1-7-->  play  --CLEAR, ENTER-->  next 
 ```
 
 - **Title**: ENTER or click opens the street map. **C** continues from `progress.jsonl`. 1–7 jump straight in. ESC quits.
-- **Map**: UP/DOWN move the cursor, ENTER or a click starts that street, 1–7 jump. Cleared streets show **CLEAR**. ESC goes back.
+- **Map**: a Super Mario World overworld of Causeway Bay. Seven level dots on a dotted path; Alex walks the path with the ARROW keys (one dot per press), ENTER or a click on a dot starts that street, 1–7 jump. Cleared dots turn green with a star, the street you left shows **HERE**, and the box at the bottom names the street under Alex. ESC goes back. The backdrops `assets/map_bg.png` / `map_bg_p.png` were generated with Higgsfield's auto image model (Grok's image model is not in that catalog); without them the map draws its own hills.
 - **Play**: read the story and the question, type the answer, ENTER or **OK**. Wrong answers shake and open the hint. **HINT** (TAB or the button) is two-tier: first a nudge, second the answer, third hides it. 30 s idle opens the nudge once. After the last blank the street is **CLEAR**: ENTER / SPACE / N / **NEXT** / walking off the right edge moves on. ESC, F2 or **MAP** open the map without losing the street.
 - **Win**: only when all seven streets are CLEAR, whichever order. Shows the ADMIT stamp and one lesson per street. ENTER returns to the map, ESC to the title.
 
@@ -61,5 +61,5 @@ Override the folder with `GATE18_HOME`. Last readable line of each kind wins on 
 
 `GATE18_DRIVE=script.lua love .` replays keys, text, clicks and window resizes on
 a timeline and saves screenshots to the LOVE save directory. `tests/drive/all.lua`
-plays every street; `tests/drive/layout.lua` checks the minimum window, a large
+plays every street; `tests/drive/map.lua` walks the overworld; `tests/drive/layout.lua` checks the minimum window, a large
 window, and fullscreen in both orientations.

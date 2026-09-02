@@ -7,6 +7,7 @@ local function at(dt, step)
   step.at = t
   S[#S + 1] = step
 end
+at(0.1, { orient = "landscape" })
 at(0.5, { key = "3" }) -- office
 at(0.3, { key = "tab" })
 at(0.3, { key = "tab" }) -- answer panel open

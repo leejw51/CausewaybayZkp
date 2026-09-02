@@ -1,12 +1,16 @@
 -- Every street, every stage, generated from src/data.lua, plus every input
 -- path. Landscape 1280x720 virtual coordinates:
 --   HUD MAP (970,35)  HINT (65,698)  OK/NEXT (185,698)
---   map row i (640, 166+69*(i-1))  station i (58+132*(i-1), 25)
+--   level dot i: game:mapNodes()[i]  station i (58+132*(i-1), 25)
 --   scene MAP label (100, 95)
 local maps = require "src.data"
 
+-- overworld level dot i (positions depend on the layout, so ask the game)
 local function row(i)
-  return { 640, 166 + 69 * (i - 1) }
+  return function(game)
+    local nd = game:mapNodes()[i]
+    return { nd.x, nd.y }
+  end
 end
 local function station(i)
   return { 58 + 132 * (i - 1), 25 }
@@ -23,6 +27,7 @@ local function shot(name)
   at(0.7, { shot = name })
 end
 
+at(0.1, { orient = "landscape" })
 at(1.8, { shot = "a01_title.png" })
 at(0.2, { click = { 640, 300 } }) -- title click -> map
 shot("a02_map.png")

@@ -9,7 +9,9 @@
 --                                        single printable characters)
 --   { at = 1.2, text = "hiding" }       love.textinput, one char per call
 --   { at = 1.5, click = { x, y } }      mouse click in virtual coordinates
+--                                        (or a function(game) -> { x, y })
 --   { at = 1.6, resize = { w, h } }     window size in points
+--   { at = 0.1, orient = "landscape" }  force landscape / portrait first
 --   { at = 2.0, shot = "title.png" }    screenshot into the LOVE save dir
 --   { at = 2.1, quit = true }
 --
@@ -53,10 +55,20 @@ function Drive:fire(step, game)
       love.textinput(ch)
     end
   elseif step.click then
-    local vx, vy = step.click[1], step.click[2]
+    local c = step.click
+    if type(c) == "function" then
+      c = c(game)
+    end
+    local vx, vy = c[1], c[2]
     local sx = vx * Layout.scale + Layout.ox
     local sy = vy * Layout.scale + Layout.oy
     love.mousepressed(sx, sy, 1)
+  elseif step.orient then
+    -- pin the layout a script's coordinates were written for
+    if Layout.mode ~= step.orient then
+      Layout.toggleOrientation()
+      Layout.flush()
+    end
   elseif step.resize then
     love.window.setMode(step.resize[1], step.resize[2], { resizable = true, highdpi = true })
     Layout.updateViewport()

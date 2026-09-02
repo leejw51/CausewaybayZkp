@@ -269,6 +269,8 @@ function Assets.load()
     "bg_bits",
     "bg_sigma",
     "bg_hash",
+    "map_bg",
+    "map_bg_p",
     "sprite_hero",
     "sprite_clerk",
     "sprite_mei",

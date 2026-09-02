@@ -333,9 +333,18 @@ end
 
 -- ---------------------------------------------------------------- overworld
 
--- Height of the level-name box at the bottom of the overworld.
+function Game:mapHelpText()
+  local back = self.mapFrom == "play" and T("esc_back") or T("esc_title")
+  return T("map_help", back)
+end
+
+-- Height of the level-name box at the bottom of the overworld. The key help
+-- may wrap (portrait, CJK), so it is measured.
 function Game:mapPanelH()
-  return fontOf("ui"):getHeight() + fontOf("small"):getHeight() * 2 + 44
+  local pad = PORT and 10 or 24
+  local smF = fontOf("small")
+  local _, helpLines = smF:getWrap(self:mapHelpText(), W - pad * 2 - 36)
+  return fontOf("ui"):getHeight() + smF:getHeight() * (1 + math.max(1, #helpLines)) + 44
 end
 
 -- Level dots, in virtual coordinates. Landscape: a zig-zag left to right.
@@ -1045,17 +1054,18 @@ function Game:drawMap()
   setC(Theme.ink)
   love.graphics.print(string.format("%d  %s", self.mapCursor, m.station), pad + 18, py + 14)
   local tag = cleared and T("clear") or (here and T("here") or "")
+  local nClear = #self:clearedIds()
+  local right = T("clear_count", nClear, #maps)
   if tag ~= "" then
-    setC(cleared and Theme.admit or Theme.brick)
-    love.graphics.printf(tag, pad, py + 14, W - pad * 2 - 18, "right")
+    right = tag .. "    " .. right
   end
+  setC(cleared and Theme.admit or Theme.brick)
+  love.graphics.printf(right, pad, py + 14, W - pad * 2 - 18, "right")
   love.graphics.setFont(smF)
   setC(Theme.navy)
   love.graphics.print(P(m.name) .. "  -  " .. P(m.title), pad + 18, py + 14 + line + 6)
   setC(Theme.ink, 0.85)
-  local back = self.mapFrom == "play" and T("esc_back") or T("esc_title")
-  local nClear = #self:clearedIds()
-  love.graphics.printf(T("map_help", back, nClear, #maps), pad, py + 14 + line + 6 + sub + 6, W - pad * 2, "center")
+  love.graphics.printf(self:mapHelpText(), pad + 18, py + 14 + line + 6 + sub + 6, W - pad * 2 - 36, "center")
 end
 
 function Game:drawPlay()

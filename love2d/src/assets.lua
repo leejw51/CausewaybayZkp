@@ -247,7 +247,9 @@ local function tryFont(size, paths)
   if font.setFilter then
     font:setFilter("nearest", "nearest")
   end
-  local cjk = cjkFont(size)
+  -- Press Start 2P fills its whole em; Noto's CJK glyphs sit at ~70% of
+  -- theirs, so the fallback for pixel fonts is made larger to match.
+  local cjk = cjkFont(paths == PIXEL and size * 1.45 or size)
   if cjk and font.setFallbacks then
     font:setFallbacks(cjk)
   end

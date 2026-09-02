@@ -77,3 +77,8 @@ python/zkp/identity.py   holder keys, issuer signature, challenge
 python/zkp/age.py        issue / prove / verify
 python/app.py            Gradio GATE 18 desk
 ```
+
+## License
+
+MIT for the code. Fonts under `love2d/assets/fonts` are SIL Open Font License 1.1 (see the `*-OFL.txt` files next to them).
+Scene art was generated with Grok (xAI) and Higgsfield; no third-party game characters appear.

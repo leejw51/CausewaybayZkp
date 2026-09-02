@@ -355,7 +355,7 @@ promise = "___"
         code = L(
           [[
 # python/zkp/pedersen.py
-# g, h: generators of the group    p: prime modulus
+# g, h: generators, 33-byte ints mod p (not a curve)
 def issue(age):                   # age: the secret number
     r = random_scalar()           # r: blinding factor, secret
     C = pow(g, age) * pow(h, ___) # C: the sealed envelope
@@ -364,7 +364,7 @@ def issue(age):                   # age: the secret number
 ]],
           [[
 # python/zkp/pedersen.py
-# g, h: 군의 생성원    p: 소수 모듈러스
+# g, h: 생성원, 33바이트 정수 (타원곡선 아님)
 def issue(age):                   # age: 비밀 숫자
     r = random_scalar()           # r: 블라인딩 인자, 비밀
     C = pow(g, age) * pow(h, ___) # C: 봉인된 봉투
@@ -373,7 +373,7 @@ def issue(age):                   # age: 비밀 숫자
 ]],
           [[
 # python/zkp/pedersen.py
-# g, h: 群嘅生成元    p: 質數模數
+# g, h: 生成元, 33-byte 整數 (唔係橢圓曲線)
 def issue(age):                   # age: 秘密數字
     r = random_scalar()           # r: 盲化因子，秘密
     C = pow(g, age) * pow(h, ___) # C: 封住嘅信封
@@ -1028,16 +1028,19 @@ c = ___(transcript) mod q    # c: 挑戰, 而家係一個 hash
         code = L(
           [[
 # python/zkp/identity.py  keygen
+# same g as the office: Schnorr key, not ECDSA
 ___ = random_scalar()     # private key, stays on the phone
 pk  = pow(g, ___)         # pk: public key   g: generator
 ]],
           [[
 # python/zkp/identity.py  keygen
+# 발급소와 같은 g: ECDSA 아닌 슈노어 키
 ___ = random_scalar()     # 개인키, 폰에만 있음
 pk  = pow(g, ___)         # pk: 공개키   g: 생성원
 ]],
           [[
 # python/zkp/identity.py  keygen
+# 同辦事處一樣嘅 g：Schnorr 鑰匙，唔係 ECDSA
 ___ = random_scalar()     # 私鑰, 留喺部電話
 pk  = pow(g, ___)         # pk: 公鑰   g: 生成元
 ]]

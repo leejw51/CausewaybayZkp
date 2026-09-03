@@ -60,6 +60,11 @@ return function(t)
       end
     end
     for _, lang in ipairs(I18n.LANGS) do
+      -- the quest header (title screen, map box) must not fall back to English
+      for _, quest in ipairs(Quests) do
+        t.ok(type(quest.name[lang]) == "string" and #quest.name[lang] > 0, lang .. " " .. quest.id .. " name")
+        t.ok(type(quest.goal[lang]) == "string" and #quest.goal[lang] > 0, lang .. " " .. quest.id .. " goal")
+      end
       for _, m in ipairs(all) do
         t.ok(#I18n.pick(m.lesson, lang) > 0, lang .. " " .. m.id .. " lesson")
         t.ok(#I18n.pick(m.story, lang) > 0, lang .. " " .. m.id .. " story")

@@ -908,64 +908,72 @@ property_one = "___"
       {
         topic = "COMMIT",
         q = L(
-          "Alex later claims 16 was age 6. He would need log_g(h), which nobody knows. Which property " .. "stops him?",
-          "알렉스가 나중에 16이 age 6이었다고 주장합니다. 아무도 모르는 log_g(h)가 필요하죠. 어떤 성질이 막나요?",
-          "阿力事後話 16 其實係 age 6。佢需要冇人知嘅 log_g(h)。咩性質阻止佢？",
-          "阿力事后说 16 其实是 age 6。他需要 log_g(h)，而没人知道它。什么性质挡住他？",
-          "アレックスが後から 16 は age 6 だったと主張します。誰も知らない log_g(h) が必要です。どの性質が止めますか？",
-          "Alex pak tvrdí, že 16 byl věk 6. Potřeboval by log_g(h), který nikdo nezná. Která vlastnost "
-            .. "ho zastaví?",
-          "Alex dice después que 16 era age 6. Necesitaría log_g(h), que nadie conoce. ¿Qué propiedad "
-            .. "lo detiene?"
+          "Alex later claims 16 was age 6. He would need log_g(h), which nobody knows in the real group. "
+            .. "Which property stops him?",
+          "알렉스가 나중에 16이 age 6이었다고 주장합니다. 실제 군에서는 아무도 모르는 log_g(h)가 필요하죠. 어떤 성질이 막나요?",
+          "阿力事後話 16 其實係 age 6。佢需要 log_g(h)，喺真實嘅群入面冇人知。咩性質阻止佢？",
+          "阿力事后说 16 其实是 age 6。他需要 log_g(h)，在真实的群里没人知道它。什么性质挡住他？",
+          "アレックスが後から 16 は age 6 だったと主張します。本物の群では誰も知らない log_g(h) が必要です。どの性質が止めますか？",
+          "Alex pak tvrdí, že 16 byl věk 6. Potřeboval by log_g(h), který ve skutečné grupě nikdo nezná. "
+            .. "Která vlastnost ho zastaví?",
+          "Alex dice después que 16 era age 6. Necesitaría log_g(h), que en el grupo real nadie conoce. "
+            .. "¿Qué propiedad lo detiene?"
         ),
         code = L(
           [[
 # Alex claims C = 16 opens as age = 6:
 #   needs r' with 2^6 * 3^r' = 16 (mod 23)   r': new blinding
 #   two openings  =>  log_g(h) is known    (h = g^x, x known)
-# g and h are hash-to-group: nobody knows that x.
+# toy:  2^8 = 256 = 3 (mod 23), so here x = 8 is easy to find
+# real: p is 259-bit and g, h come from a hash: nobody can find x
 property_two = "___"
 ]],
           [[
 # 알렉스가 C = 16이 age = 6이라고 주장:
 #   2^6 * 3^r' = 16 (mod 23)인 r'이 필요   r': 새 블라인딩
 #   열쇠가 둘  =>  log_g(h)를 안다는 뜻   (h = g^x, x를 앎)
-# g와 h는 해시로 만든 생성원: 그 x는 아무도 모름.
+# 장난감: 2^8 = 256 = 3 (mod 23), 여기선 x = 8을 금방 찾음
+# 실제:   p는 259비트, g와 h는 해시로 만듦: 그 x는 아무도 못 찾음
 property_two = "___"
 ]],
           [[
 # 阿力話 C = 16 開出嚟係 age = 6:
 #   需要 r' 令 2^6 * 3^r' = 16 (mod 23)   r': 新盲化
 #   兩個開封  =>  即係知道 log_g(h)   (h = g^x, 知道 x)
-# g 同 h 係 hash 出嚟嘅: 冇人知道嗰個 x。
+# 玩具: 2^8 = 256 = 3 (mod 23)，喺呢度 x = 8 好易搵到
+# 真實: p 係 259-bit，g 同 h 係 hash 出嚟: 冇人搵到嗰個 x
 property_two = "___"
 ]],
           [[
 # 阿力声称 C = 16 打开是 age = 6:
 #   需要 r' 使 2^6 * 3^r' = 16 (mod 23)   r': 新的盲化
 #   两个打开  =>  等于知道 log_g(h)    (h = g^x, x 已知)
-# g 和 h 是 hash 到群里的: 没人知道那个 x。
+# 玩具: 2^8 = 256 = 3 (mod 23)，这里 x = 8 很容易找到
+# 真实: p 是 259 位，g 和 h 来自 hash: 没人能找到那个 x
 property_two = "___"
 ]],
           [[
 # アレックスは C = 16 が age = 6 で開くと主張:
 #   2^6 * 3^r' = 16 (mod 23) となる r' が必要   r': 新しいブラインディング
 #   開示が二つ  =>  log_g(h) を知っている   (h = g^x, x を知る)
-# g と h はハッシュから作った生成元: その x は誰も知らない。
+# おもちゃ: 2^8 = 256 = 3 (mod 23)、ここでは x = 8 がすぐ見つかる
+# 本物:    p は259ビット、g と h はハッシュ由来: その x は誰にも見つからない
 property_two = "___"
 ]],
           [[
 # Alex tvrdí: C = 16 se otevře jako age = 6:
 #   nutné r' s 2^6 * 3^r' = 16 (mod 23)   r': nové zaslepení
 #   dvě otevření  =>  log_g(h) je známý    (h = g^x, x známé)
-# g a h vznikly hašováním: to x nikdo nezná.
+# hračka:  2^8 = 256 = 3 (mod 23), tady je x = 8 snadno k nalezení
+# realita: p má 259 bitů a g, h vznikly hašováním: to x nikdo nenajde
 property_two = "___"
 ]],
           [[
 # Alex dice que C = 16 abre como age = 6:
 #   necesita r' con 2^6 * 3^r' = 16 (mod 23)   r': cegado nuevo
 #   dos aperturas  =>  se conoce log_g(h)   (h = g^x, x conocido)
-# g y h salen de un hash: nadie conoce esa x.
+# juguete: 2^8 = 256 = 3 (mod 23), aquí x = 8 se encuentra fácil
+# real:    p es de 259 bits y g, h salen de un hash: nadie encuentra esa x
 property_two = "___"
 ]]
         ),
@@ -995,13 +1003,13 @@ property_two = "___"
           "Hiding ya lo escribiste. La otra propiedad: el sello no se puede reabrir de otra forma."
         ),
         ok = L(
-          "Binding: 25 cannot become 19 later. One envelope, one age.",
-          "구속: 25가 나중에 19가 될 수 없다. 봉투 하나, 나이 하나.",
-          "綁定：25 之後唔可以變 19。一個信封，一個年齡。",
-          "绑定：25 以后不能变成 19。一个信封，一个年龄。",
-          "束縛：25 が後から 19 にはなれない。封筒ひとつ、年齢ひとつ。",
-          "Vázanost: z 25 se později nestane 19. Jedna obálka, jeden věk.",
-          "Binding: 25 no puede volverse 19 después. Un sobre, una edad."
+          "Binding: 25 cannot become 19 later. One envelope, one age. The toy p = 23 is for hand arithmetic only.",
+          "구속: 25가 나중에 19가 될 수 없다. 봉투 하나, 나이 하나. 장난감 p = 23은 손계산용일 뿐.",
+          "綁定：25 之後唔可以變 19。一個信封，一個年齡。玩具 p = 23 只係方便手算。",
+          "绑定：25 以后不能变成 19。一个信封，一个年龄。玩具 p = 23 只是为了手算。",
+          "束縛：25 が後から 19 にはなれない。封筒ひとつ、年齢ひとつ。おもちゃの p = 23 は手計算のためだけ。",
+          "Vázanost: z 25 se později nestane 19. Jedna obálka, jeden věk. Hračkové p = 23 je jen pro počítání rukou.",
+          "Binding: 25 no puede volverse 19 después. Un sobre, una edad. El p = 23 de juguete es solo para calcular a mano."
         ),
       },
     },
@@ -1301,13 +1309,13 @@ delta == ___
           "17 - 18 es negativo. Los negativos no tienen forma de bits 0/1."
         ),
         ok = L(
-          "delta = -1 has no 8-bit form. No bits, no proof. Soundness.",
-          "delta = -1은 8비트 형태가 없다. 비트가 없으면 증명도 없다. 건전성.",
-          "delta = -1 冇 8-bit 形式。冇 bit，冇證明。可靠性。",
-          "delta = -1 没有 8-bit 形式。没有 bit，就没有证明。可靠性。",
-          "delta = -1 に8ビットの形はない。ビットがなければ証明もない。健全性。",
-          "delta = -1 nemá osmibitový tvar. Bez bitů není důkaz. Korektnost.",
-          "delta = -1 no tiene forma de 8 bits. Sin bits, sin prueba. Solidez."
+          "delta = -1 has no 8-bit form. In the real group -1 wraps to q - 1, a 256-bit number: still not 8 bits. No bits, no proof. Soundness.",
+          "delta = -1은 8비트 형태가 없다. 실제 군에서는 -1이 q - 1, 256비트 수로 감기지만 역시 8비트가 아니다. 비트가 없으면 증명도 없다. 건전성.",
+          "delta = -1 冇 8-bit 形式。喺真實嘅群入面 -1 會捲成 q - 1，一個 256-bit 數，仍然唔係 8 bit。冇 bit，冇證明。可靠性。",
+          "delta = -1 没有 8-bit 形式。在真实的群里 -1 会绕成 q - 1，一个 256 位的数，仍然不是 8 bit。没有 bit，就没有证明。可靠性。",
+          "delta = -1 に8ビットの形はない。本物の群では -1 は q - 1 という256ビットの数に巻き戻るが、やはり8ビットではない。ビットがなければ証明もない。健全性。",
+          "delta = -1 nemá osmibitový tvar. Ve skutečné grupě se -1 přetočí na q - 1, 256bitové číslo: stále ne osm bitů. Bez bitů není důkaz. Korektnost.",
+          "delta = -1 no tiene forma de 8 bits. En el grupo real -1 da la vuelta a q - 1, un número de 256 bits: sigue sin caber en 8 bits. Sin bits, sin prueba. Solidez."
         ),
       },
       {
@@ -1536,13 +1544,13 @@ MAX_AGE == ___
           "Anuncio t, desafío c, respuesta s. El secreto x nunca se envía."
         ),
         ok = L(
-          "s = k + c*x. The secret x is masked by the random k.",
-          "s = k + c*x. 비밀 x는 무작위 k에 가려진다.",
-          "s = k + c*x。秘密 x 俾隨機嘅 k 遮住。",
-          "s = k + c*x。秘密 x 被随机的 k 遮住。",
-          "s = k + c*x。秘密の x は乱数 k に覆われる。",
-          "s = k + c*x. Tajné x maskuje náhodné k.",
-          "s = k + c*x. El secreto x queda enmascarado por el k aleatorio."
+          "s = k + c*x. The secret x is masked by the random k. Reuse k and two s values give x away: k is one-use.",
+          "s = k + c*x. 비밀 x는 무작위 k에 가려진다. k를 두 번 쓰면 두 s에서 x가 새어 나온다: k는 한 번만.",
+          "s = k + c*x。秘密 x 俾隨機嘅 k 遮住。k 用兩次，兩個 s 就會漏出 x：k 只可以用一次。",
+          "s = k + c*x。秘密 x 被随机的 k 遮住。k 用两次，两个 s 就会泄露 x：k 只能用一次。",
+          "s = k + c*x。秘密の x は乱数 k に覆われる。k を二度使うと二つの s から x が漏れる：k は一回きり。",
+          "s = k + c*x. Tajné x maskuje náhodné k. Použij k dvakrát a dvě s prozradí x: k je na jedno použití.",
+          "s = k + c*x. El secreto x queda enmascarado por el k aleatorio. Usa k dos veces y dos s revelan x: k es de un solo uso."
         ),
       },
       {

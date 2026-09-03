@@ -10,7 +10,7 @@ STYLUA  := stylua
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start run stop test format status drive
+.PHONY: help start run stop test format status drive snark
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\n  GATE 18  //  Love2D\n\n"} \
@@ -74,6 +74,9 @@ drive: ## Replay a scripted session: make drive SCRIPT=tests/drive/all.lua
 	rm -rf "$(APP)/.drive-home"; \
 	echo "screenshots: ~/Library/Application Support/LOVE/gate18-causewaybay"; \
 	exit $$status
+
+snark: ## Build the quest 2 Rust library the game loads over ffi
+	cargo build --release --manifest-path "$(CURDIR)/../rust/Cargo.toml"
 
 format: ## Format Lua with stylua
 	@command -v $(STYLUA) >/dev/null 2>&1 || { \

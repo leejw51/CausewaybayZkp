@@ -3,6 +3,7 @@
 
 local Store = require "src.store"
 local Game = require "src.game"
+local Quests = require "src.quests"
 local maps = require "src.data"
 
 return function(t)
@@ -46,10 +47,20 @@ return function(t)
     end
   end
 
-  t.it("every stage has a question, a blank, an answer and a hint in every language", function()
+  t.it("every stage of every quest has a question, a blank, an answer and a hint in every language", function()
     local I18n = require "src.i18n"
+    local all = {}
+    local seen = {}
+    for _, quest in ipairs(Quests) do
+      t.eq(#quest.maps, 7, quest.id .. " has seven streets")
+      for _, m in ipairs(quest.maps) do
+        t.ok(not seen[m.id], "street id " .. m.id .. " is unique across quests")
+        seen[m.id] = true
+        all[#all + 1] = m
+      end
+    end
     for _, lang in ipairs(I18n.LANGS) do
-      for _, m in ipairs(maps) do
+      for _, m in ipairs(all) do
         t.ok(#I18n.pick(m.lesson, lang) > 0, lang .. " " .. m.id .. " lesson")
         t.ok(#I18n.pick(m.story, lang) > 0, lang .. " " .. m.id .. " story")
         for si, st in ipairs(m.stages) do
@@ -252,6 +263,232 @@ return function(t)
     t.eq(g.state, "map")
     press(g, "escape")
     t.eq(g.state, "title")
+  end)
+
+  t.it("Q switches quest on the title and the map; digits jump inside it", function()
+    local g = fresh()
+    t.eq(g.quest, 1)
+    press(g, "q")
+    t.eq(g.quest, 2)
+    t.eq(g:map().id, "puzzle", "the street list follows the quest")
+    press(g, "return")
+    t.eq(g.state, "map")
+    press(g, "q")
+    t.eq(g.quest, 1)
+    press(g, "q")
+    t.eq(g.quest, 2)
+    press(g, "3")
+    t.eq(g.state, "play")
+    t.eq(g.step, 3)
+    t.eq(g:map().id, "r1cs")
+    t.eq(g.input, "")
+  end)
+
+  t.it("each quest has its own stamp; clearing one leaves the other untouched", function()
+    local g = fresh()
+    press(g, "q")
+    press(g, "1")
+    for i = 1, 7 do
+      t.eq(g.step, i)
+      local m = g:map()
+      for _, st in ipairs(m.stages) do
+        type_(g, st.answer)
+        press(g, "return")
+      end
+      t.eq(g.solved, true, m.id .. " clear")
+      press(g, "return")
+    end
+    t.eq(g.state, "win")
+    t.eq(g:questDef().win.stamp, "SOLVED")
+    t.eq(g:clearedCount(2), 7)
+    t.eq(g:clearedCount(1), 0, "quest 1 is still open")
+    press(g, "return")
+    t.eq(g.state, "map")
+    press(g, "q")
+    t.eq(g:allCleared(), false, "quest 1 has no stamp yet")
+  end)
+
+  t.it("progress remembers the quest, and CLEAR streets of both quests survive a save", function()
+    local g = fresh()
+    press(g, "1")
+    solveStreet(g) -- quest 1, street 1
+    press(g, "escape")
+    press(g, "q")
+    press(g, "2") -- quest 2, street 2
+    type_(g, g:map().stages[1].answer)
+    press(g, "return")
+    t.eq(g.stage, 2)
+    local g2 = Game.new()
+    g2:ingestProgress(require("src.persist").loadProgress())
+    g2:enterTitle()
+    t.eq(g2.quest, 2)
+    t.eq(g2.saved.quest, 2)
+    t.eq(g2:isCleared(1), false, "street 1 of quest 2 is open")
+    t.eq(g2.cleared["street"], true, "quest 1's CLEAR came along")
+    press(g2, "c")
+    t.eq(g2.state, "play")
+    t.eq(g2.quest, 2)
+    t.eq(g2.step, 2)
+    t.eq(g2.stage, 2)
+    t.eq(g2:map().id, "circuit")
+  end)
+
+  t.it("switching quest from a street's map drops the resume, so the other quest starts fresh", function()
+    local g = fresh()
+    press(g, "4")
+    type_(g, maps[4].stages[1].answer)
+    press(g, "return")
+    t.eq(g.stage, 2)
+    press(g, "escape")
+    press(g, "q")
+    t.eq(g.quest, 2)
+    press(g, "4")
+    t.eq(g.quest, 2)
+    t.eq(g:map().id, "qap")
+    t.eq(g.stage, 1, "not quest 1's half-done street")
+  end)
+
+  -- run the clock until pred() holds or the budget is spent
+  local function runUntil(g, pred, budget)
+    for _ = 1, budget do
+      g:update(0.1)
+      g.frame = g.frame + 1
+      if pred() then
+        return true
+      end
+    end
+    return false
+  end
+
+  t.it("AUTO reads, hints, types, submits and walks to the next street; a key of the reader's stops it", function()
+    local g = fresh()
+    press(g, "3")
+    press(g, "f5")
+    t.eq(g.auto, true)
+    t.ok(runUntil(g, function()
+      return g.hintLevel == 1
+    end, 40), "AUTO opens the nudge first")
+    t.ok(runUntil(g, function()
+      return g.input ~= ""
+    end, 40), "then types")
+    t.ok(runUntil(g, function()
+      return g.stage == 2
+    end, 200), "then submits and moves to the next blank")
+    t.eq(g.hintLevel, 0, "the nudge closes with the blank")
+    t.ok(runUntil(g, function()
+      return g.solved
+    end, 600), "AUTO clears the street")
+    t.eq(g.auto, true, "still running after CLEAR")
+    t.ok(runUntil(g, function()
+      return g.step == 4
+    end, 60), "walks to the next street by itself")
+    t.eq(g.stage, 1)
+    press(g, "escape")
+    t.eq(g.auto, false, "ESC stops AUTO")
+    t.eq(g.state, "map")
+  end)
+
+  t.it("AUTO from street 1 plays the whole quest to the stamp", function()
+    local g = fresh()
+    press(g, "1")
+    g:startAuto()
+    t.ok(runUntil(g, function()
+      return g.state == "win"
+    end, 6000), "reaches the stamp")
+    t.eq(g:allCleared(), true)
+    t.eq(g.auto, false, "AUTO stops on the stamp")
+  end)
+
+  t.it("AUTO skips streets already CLEAR and typing stops it", function()
+    local g = fresh()
+    press(g, "2")
+    solveStreet(g)
+    press(g, "escape")
+    press(g, "1")
+    g:startAuto()
+    t.ok(runUntil(g, function()
+      return g.step ~= 1
+    end, 1500), "leaves street 1")
+    t.eq(g.step, 3, "street 2 is CLEAR, so 3 comes next")
+    type_(g, "x")
+    t.eq(g.auto, false, "typing stops AUTO")
+  end)
+
+  t.it("PREV / NEXT page through the blanks of one street and stop at both ends", function()
+    local g = fresh()
+    local function tap(which)
+      g[which](g)
+      g.frame = g.frame + 1
+    end
+    press(g, "3") -- office, several blanks
+    local n = #maps[3].stages
+    t.ok(n >= 3, "street 3 has enough blanks for the test")
+    tap("prevStage")
+    t.eq(g.stage, 1, "PREV on the first blank stays put")
+    tap("nextStage")
+    t.eq(g.stage, 2)
+    t.eq(g.step, 3, "NEXT never leaves the street")
+    type_(g, "abc")
+    press(g, "tab")
+    tap("prevStage")
+    t.eq(g.stage, 1)
+    t.eq(g.input, "", "moving drops the typed text")
+    t.eq(g.hintLevel, 0, "moving closes the hint")
+    for _ = 1, n + 2 do
+      tap("nextStage")
+    end
+    t.eq(g.stage, n, "NEXT on the last blank stays put")
+    t.eq(g.solved, false, "browsing answers nothing")
+  end)
+
+  t.it("a blank skipped with NEXT is still asked before CLEAR", function()
+    local g = fresh()
+    press(g, "3")
+    local stages = maps[3].stages
+    -- jump to the last blank and answer it first
+    for _ = 1, #stages - 1 do
+      g:nextStage()
+      g.frame = g.frame + 1
+    end
+    t.eq(g.stage, #stages)
+    type_(g, stages[#stages].answer)
+    press(g, "return")
+    t.eq(g.solved, false, "one answer does not clear the street")
+    t.eq(g.stage, 1, "the cursor returns to the first open blank")
+    for i = 1, #stages - 1 do
+      type_(g, stages[i].answer)
+      press(g, "return")
+    end
+    t.eq(g.solved, true, "every blank answered -> CLEAR")
+    t.eq(g:isCleared(3), true)
+  end)
+
+  t.it("PGUP / PGDN page through the blanks from the keyboard", function()
+    local g = fresh()
+    press(g, "3")
+    press(g, "pagedown")
+    t.eq(g.stage, 2)
+    t.eq(g.input, "", "the page key is not typed into the blank")
+    press(g, "pageup")
+    t.eq(g.stage, 1)
+  end)
+
+  t.it("progress saves the first open blank, not the one being browsed", function()
+    local g = fresh()
+    press(g, "2")
+    type_(g, maps[2].stages[1].answer)
+    press(g, "return")
+    t.eq(g.stage, 2)
+    g:nextStage() -- peek at blank 3
+    t.eq(g.stage, 3)
+    local g2 = Game.new()
+    g2:ingestProgress(require("src.persist").loadProgress())
+    g2:enterTitle()
+    t.eq(g2.saved.stage, 2, "resume lands on the open blank")
+    press(g2, "c")
+    t.eq(g2.stage, 2)
+    t.eq(g2.done[1], true, "the answered blank stays answered")
+    t.eq(g2.done[2], nil)
   end)
 
   t.it("progress persists: C on the title continues", function()

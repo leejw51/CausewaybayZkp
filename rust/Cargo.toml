@@ -1,0 +1,32 @@
+[package]
+name = "gate18_snark"
+version = "0.1.0"
+edition = "2021"
+description = "GATE 18 quest 2: a real Groth16 zk-SNARK (BN254, arkworks) for a 4x4 mini-sudoku, exposed over a C ABI for the Love2D game"
+license = "MIT"
+
+[lib]
+name = "gate18_snark"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "gate18-snark"
+path = "src/main.rs"
+
+[dependencies]
+ark-bn254 = "0.5"
+ark-ec = "0.5"
+ark-ff = "0.5"
+ark-groth16 = "0.5"
+ark-r1cs-std = "0.5"
+ark-relations = "0.5"
+ark-serialize = "0.5"
+ark-snark = "0.5"
+ark-std = "0.5"
+rand = "0.8"
+rand_chacha = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3

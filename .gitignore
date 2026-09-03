@@ -16,3 +16,6 @@ love2d/.test-home/
 love2d/.drive-home/
 .ruff_cache/
 .playwright-mcp/
+
+# Rust (quest 2 SNARK)
+rust/target/

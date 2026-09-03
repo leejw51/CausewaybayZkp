@@ -14,6 +14,7 @@
 #
 #   make          show this help
 #   make package  build the signed release binary and library into ./dist
+#   make app      build the game as a double-clickable macOS .app
 #   make test     run every suite
 
 RUST_DIR   := rust
@@ -100,6 +101,27 @@ package-verify: ## Check the packaged artifacts run
 	@test -s "$(DIST_DIR)/$(FFI_LIB)" && echo "$$(du -h "$(DIST_DIR)/$(FFI_LIB)" | cut -f1 | tr -d ' ')" \
 		|| { echo "missing" >&2; exit 1; }
 
+# ------------------------------------------------------------------- the app
+#
+# The other half of a release: the game itself, as something a person can
+# double-click. `make package` above produces the command-line artifacts, which
+# need a terminal and a checkout to be interesting. This produces a bundle with
+# LÖVE inside it, the SNARK library in Frameworks, signed and notarizable.
+#
+# macOS only, and it is love2d/Makefile's recipe — everything here is a door to
+# it, so `make app` on a laptop and a tagged release do the same thing.
+.PHONY: app
+app: ## Build the double-clickable macOS .app (LÖVE embedded, signed)
+	@$(MAKE) --no-print-directory -C $(LOVE_DIR) app
+
+.PHONY: notarize
+notarize: ## Notarize and staple the built .app (needs Apple credentials)
+	@$(MAKE) --no-print-directory -C $(LOVE_DIR) notarize
+
+.PHONY: gatekeeper
+gatekeeper: ## Assess the built .app the way Finder does
+	@$(MAKE) --no-print-directory -C $(LOVE_DIR) gatekeeper
+
 .PHONY: release
 release: ## Build the optimised binary and shared library
 	@echo "==> cargo build --release ($(BIN) $(VERSION))"
@@ -145,6 +167,7 @@ run: ## Open the Love2D game
 # ---------------------------------------------------------------------- clean
 
 .PHONY: clean
-clean: ## Remove ./dist and the Rust build output
+clean: ## Remove ./dist, the app bundle and the Rust build output
 	@$(CARGO) clean $(MANIFEST)
+	@$(MAKE) --no-print-directory -C $(LOVE_DIR) clean
 	@rm -rf "$(DIST_DIR)"

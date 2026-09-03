@@ -582,7 +582,14 @@ function Game:mapPanelH()
   local pad = PORT and 10 or 24
   local smF = fontOf("small")
   local _, helpLines = smF:getWrap(self:mapHelpText(), W - pad * 2 - 36)
-  return fontOf("ui"):getHeight() + smF:getHeight() * (1 + math.max(1, #helpLines)) + 44
+  local _, goalLines = smF:getWrap(self:mapGoalText(), W - pad * 2 - 36)
+  return fontOf("ui"):getHeight() + smF:getHeight() * (2 + math.max(1, #helpLines) + math.max(1, #goalLines)) + 50
+end
+
+-- The open quest, one line: "GATE 18 - Sigma protocol  ·  Buy beer without..."
+function Game:mapGoalText()
+  local quest = self:questDef()
+  return P(quest.name) .. "  ·  " .. P(quest.goal)
 end
 
 -- Level dots, in virtual coordinates. Landscape: a zig-zag left to right.
@@ -1231,7 +1238,12 @@ function Game:drawTitle()
   sprites.draw("clerk", W * 0.78, gy, { t = self.t, facing = -1, h = ch })
   sprites.item("item_beer", W * 0.88, gy - ch * 0.28, ch * 0.38, math.sin(self.t) * 0.1)
 
-  local bar = 24 + uh + 6 + mh + 6 + mh + 6 + mh + 12
+  -- which of the two quests ENTER opens, and what that quest is about
+  local quest = self:questDef()
+  local goal = P(quest.goal)
+  local _, goalLines = smF:getWrap(goal, W - 48)
+  local goalH = mh * math.max(1, #goalLines)
+  local bar = 24 + uh + 6 + mh + 6 + mh + 4 + goalH + 6 + mh + 12
   UI.panel(12, H - bar - 8, W - 24, bar, Theme.panel)
   local blink = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(self.t * 3.2))
   love.graphics.setFont(uiF)
@@ -1253,8 +1265,6 @@ function Game:drawTitle()
   else
     love.graphics.printf(T("title_fresh"), 12, H - bar + 12 + uh, W - 24, "center")
   end
-  -- which of the two quests ENTER opens
-  local quest = self:questDef()
   setC(Theme.navy, 0.95 * k)
   love.graphics.printf(
     T("quest_tab", self.quest) .. "   " .. P(quest.name),
@@ -1263,6 +1273,8 @@ function Game:drawTitle()
     W - 24,
     "center"
   )
+  setC(Theme.ink, 0.9 * k)
+  love.graphics.printf(goal, 24, H - bar + 12 + uh + mh + 6 + mh + 4, W - 48, "center")
   setC(Theme.ink, 0.8 * k)
   love.graphics.printf(T("title_help"), 12, H - 16 - mh, W - 24, "center")
 end
@@ -1519,10 +1531,21 @@ function Game:drawMap()
   setC(cleared and Theme.admit or Theme.brick)
   love.graphics.printf(right, pad, py + 14, W - pad * 2 - 18, "right")
   love.graphics.setFont(smF)
+  local goalText = self:mapGoalText()
+  local _, goalLines = smF:getWrap(goalText, W - pad * 2 - 36)
+  local goalH = sub * math.max(1, #goalLines)
+  setC(Theme.brick, 0.95)
+  love.graphics.printf(goalText, pad + 18, py + 14 + line + 6, W - pad * 2 - 36, "left")
   setC(Theme.navy)
-  love.graphics.print(P(m.name) .. "  -  " .. P(m.title), pad + 18, py + 14 + line + 6)
+  love.graphics.print(P(m.name) .. "  -  " .. P(m.title), pad + 18, py + 14 + line + 6 + goalH + 6)
   setC(Theme.ink, 0.85)
-  love.graphics.printf(self:mapHelpText(), pad + 18, py + 14 + line + 6 + sub + 6, W - pad * 2 - 36, "center")
+  love.graphics.printf(
+    self:mapHelpText(),
+    pad + 18,
+    py + 14 + line + 6 + goalH + 6 + sub + 6,
+    W - pad * 2 - 36,
+    "center"
+  )
 end
 
 function Game:drawPlay()

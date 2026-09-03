@@ -1,6 +1,7 @@
 # GATE 18 — Causeway Bay (Love2D)
 
-English · 한국어 · 粵語 (F3 or the top-right button; remembered between runs).
+English · 한국어 · 粵語 · 简体中文 · 日本語 · Čeština · Español
+(F3 or the top-right button; remembered between runs).
 
 A Wonder Boy-style 16-bit beer run. Same ZKP as `python/zkp`,
 played as a quiz: seven streets, 24 blanks, type the answer. Some blanks are
@@ -47,7 +48,7 @@ Every variable in a code block carries a trailing `#` comment saying what it mea
 
 ## Keys
 
-- **F3** / the language button — English → 한국어 → 粵語. Localized answers count too (건전성, 可靠性, 은닉, 隱藏 ...). CJK text uses Noto Sans CJK (`assets/fonts`, OFL) as a glyph fallback behind the pixel fonts. The shipped file is a 4 MB subset (all Hangul, common Traditional Chinese incl. HKSCS Cantonese, CJK punctuation); `tools/subset_cjk.py` regenerates it from the full font.
+- **F3** / the language button — seven languages in a loop: English → 한국어 (Korean) → 粵語 (Cantonese) → 简体中文 (Simplified Chinese) → 日本語 (Japanese) → Čeština (Czech) → Español (Spanish). Localized answers count too (건전성, 可靠性, korektnost, solidez, 은닉, 隱藏, 隠蔽, ocultación ...), and accents are optional: `reseni` matches `řešení`, `anos` matches `años`. Latin script comes straight from the pixel fonts, which carry the Czech and Spanish accents; CJK falls back to Noto Sans CJK (`assets/fonts`, OFL) behind them. The shipped file is a 6 MB subset (all Hangul, the GB 2312 Simplified hanzi, the JIS X 0208 kanji and kana, Big5 level 1 with HKSCS, CJK punctuation); `tools/subset_cjk.py` regenerates it from the full font and should be re-run whenever new CJK text lands in `src/`.
 - **F4** — sound on/off (remembered). Every effect is synthesized at load from square, triangle, saw and noise waves at 8-bit depth: key blips, map steps, a rising arpeggio for a right answer, a falling buzz for a wrong one, a DENY thud, a street-clear fanfare and a win jingle. No audio files.
 - **F2** / **MAP** — street map · **F11** / **WIND/FULL** — window / fullscreen · **F1** / **LAND/PORT** — landscape 1280×720 / portrait 720×1280. A portrait display starts in portrait; the choice is remembered.
 

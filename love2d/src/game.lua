@@ -162,8 +162,93 @@ end
 
 -- Answers compare loosely: case, spaces, quotes, underscores, dashes and
 -- dots are ignored, so "SHA-256", "sha256" and "sha_256" all match.
+-- Accented Latin folds to its bare letter, so a Czech or Spanish answer can
+-- be typed on a keyboard without those keys: "reseni" matches "řešení" and
+-- "anos" matches "años". Both cases are listed because Lua's :lower() is
+-- ASCII only and leaves "Ř" alone.
+local FOLD = {
+  ["á"] = "a",
+  ["Á"] = "a",
+  ["à"] = "a",
+  ["À"] = "a",
+  ["â"] = "a",
+  ["Â"] = "a",
+  ["ä"] = "a",
+  ["Ä"] = "a",
+  ["ã"] = "a",
+  ["Ã"] = "a",
+  ["å"] = "a",
+  ["Å"] = "a",
+  ["ç"] = "c",
+  ["Ç"] = "c",
+  ["č"] = "c",
+  ["Č"] = "c",
+  ["ď"] = "d",
+  ["Ď"] = "d",
+  ["é"] = "e",
+  ["É"] = "e",
+  ["ě"] = "e",
+  ["Ě"] = "e",
+  ["è"] = "e",
+  ["È"] = "e",
+  ["ê"] = "e",
+  ["Ê"] = "e",
+  ["ë"] = "e",
+  ["Ë"] = "e",
+  ["í"] = "i",
+  ["Í"] = "i",
+  ["ì"] = "i",
+  ["Ì"] = "i",
+  ["î"] = "i",
+  ["Î"] = "i",
+  ["ï"] = "i",
+  ["Ï"] = "i",
+  ["ľ"] = "l",
+  ["Ľ"] = "l",
+  ["ň"] = "n",
+  ["Ň"] = "n",
+  ["ñ"] = "n",
+  ["Ñ"] = "n",
+  ["ó"] = "o",
+  ["Ó"] = "o",
+  ["ò"] = "o",
+  ["Ò"] = "o",
+  ["ô"] = "o",
+  ["Ô"] = "o",
+  ["ö"] = "o",
+  ["Ö"] = "o",
+  ["õ"] = "o",
+  ["Õ"] = "o",
+  ["ř"] = "r",
+  ["Ř"] = "r",
+  ["š"] = "s",
+  ["Š"] = "s",
+  ["ť"] = "t",
+  ["Ť"] = "t",
+  ["ú"] = "u",
+  ["Ú"] = "u",
+  ["ů"] = "u",
+  ["Ů"] = "u",
+  ["ù"] = "u",
+  ["Ù"] = "u",
+  ["û"] = "u",
+  ["Û"] = "u",
+  ["ü"] = "u",
+  ["Ü"] = "u",
+  ["ý"] = "y",
+  ["Ý"] = "y",
+  ["ÿ"] = "y",
+  ["Ÿ"] = "y",
+  ["ž"] = "z",
+  ["Ž"] = "z",
+}
+
 local function norm(s)
   s = tostring(s or ""):lower()
+  -- one UTF-8 code point at a time: a lead byte plus its continuation bytes
+  s = s:gsub("[\194-\244][\128-\191]*", function(ch)
+    return FOLD[ch] or ch
+  end)
   s = s:gsub("[\"'`]", "")
   s = s:gsub("%s+", "")
   s = s:gsub("[_%.]", "")
@@ -291,15 +376,14 @@ function Game:syncMetrics()
   PORT = Layout.isPortrait()
   assets.ensureFonts(Layout.uiScale())
   local stationH = fontOf("station"):getHeight()
-  local btnW, btnH = btnBox({
-    T("hud_full"),
-    T("hud_wind"),
-    T("hud_port"),
-    T("hud_land"),
-    T("hud_map"),
-    T("hud_back"),
-    I18n.NAMES[I18n.lang] or "EN",
-  }, 112, 32, 36)
+  -- Each HUD button fits only the labels it can itself show, so a long
+  -- language name (ESPAÑOL) widens that one button and leaves the station
+  -- strip beside it as much room as it can get.
+  local oriW, h1 = btnBox({ T("hud_port"), T("hud_land") }, 112, 32, 36)
+  local fullW, h2 = btnBox({ T("hud_full"), T("hud_wind") }, 112, 32, 36)
+  local mapW, h3 = btnBox({ T("hud_map"), T("hud_back") }, 112, 32, 36)
+  local langW, h4 = btnBox({ I18n.NAMES[I18n.lang] or "EN" }, 112, 32, 36)
+  local btnH = math.max(h1, h2, h3, h4)
   TOP = math.max(PORT and 80 or 70, stationH + 52, btnH + 20)
   local termShare = PORT and 0.52 or 0.55
   SCENE_H = math.floor(H * (1 - termShare)) - TOP
@@ -311,14 +395,15 @@ function Game:syncMetrics()
   HUD.ori[2] = HUD.full[2]
   HUD.map[2] = HUD.full[2]
   HUD.lang[2] = HUD.full[2]
-  HUD.full[3], HUD.full[4] = btnW, btnH
-  HUD.ori[3], HUD.ori[4] = btnW, btnH
-  HUD.map[3], HUD.map[4] = btnW, btnH
-  HUD.lang[3], HUD.lang[4] = btnW, btnH
-  HUD.ori[1] = W - btnW - 10
-  HUD.full[1] = W - btnW * 2 - 20
-  HUD.map[1] = W - btnW * 3 - 30
-  HUD.lang[1] = W - btnW * 4 - 40
+  HUD.ori[3], HUD.ori[4] = oriW, btnH
+  HUD.full[3], HUD.full[4] = fullW, btnH
+  HUD.map[3], HUD.map[4] = mapW, btnH
+  HUD.lang[3], HUD.lang[4] = langW, btnH
+  -- right to left: orientation, window, map, language
+  HUD.ori[1] = W - oriW - 10
+  HUD.full[1] = HUD.ori[1] - fullW - 10
+  HUD.map[1] = HUD.full[1] - mapW - 10
+  HUD.lang[1] = HUD.map[1] - langW - 10
 end
 
 function Game:load()

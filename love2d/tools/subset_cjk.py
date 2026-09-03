@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Subset Noto Sans CJK KR for the game's fallback font.
 
-The full font is 16 MB. The game only needs: every Hangul syllable (so any
-typed Korean renders), the common Traditional Chinese set (Big5 level 1 plus
-the HKSCS Cantonese characters in that range), CJK punctuation, and every
-CJK character that appears in the Lua sources. That is about 17k code points
-and 4 MB.
+The full font is 16 MB. The game only needs enough to render every language
+it ships and anything a player might type as an answer:
+
+  * every Hangul syllable and jamo                      (Korean)
+  * hiragana, katakana and the JIS X 0208 kanji         (Japanese)
+  * the GB 2312 hanzi                                   (Simplified Chinese)
+  * Big5 level 1 plus its HKSCS characters              (Cantonese)
+  * CJK punctuation, fullwidth forms, general punctuation
+  * every CJK character that appears in the Lua sources
+
+Czech and Spanish need no fallback: Press Start 2P and VT323 both carry the
+accented Latin themselves.
+
+Run this again whenever new CJK text lands in src/, so a character used in a
+story line cannot go missing.
 
     pip install fonttools
     python3 tools/subset_cjk.py path/to/NotoSansCJKkr-Regular.otf
@@ -41,15 +51,35 @@ def big5_level1_hkscs():
     return cps
 
 
+def encodable(codec):
+    """Every CJK code point the legacy codec can represent.
+
+    gb2312 gives the 6763 Simplified hanzi of the mainland standard;
+    shift_jis gives the JIS X 0208 kanji, kana and all.
+    """
+    cps = set()
+    for cp in range(0x3000, 0x30000):
+        try:
+            chr(cp).encode(codec)
+        except UnicodeEncodeError:
+            continue
+        cps.add(cp)
+    return cps
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     cps = used_in_sources() | big5_level1_hkscs()
+    cps |= encodable("gb2312")  # Simplified Chinese
+    cps |= encodable("shift_jis")  # Japanese kanji and kana
     cps |= set(range(0xAC00, 0xD7A4))  # Hangul syllables
     cps |= set(range(0x1100, 0x1200))  # Hangul Jamo
     cps |= set(range(0x3130, 0x3190))  # Hangul compatibility Jamo
     cps |= set(range(0x3000, 0x3040))  # CJK punctuation
-    cps |= set(range(0xFF00, 0xFFF0))  # fullwidth forms
+    cps |= set(range(0x3040, 0x3100))  # hiragana and katakana
+    cps |= set(range(0x31F0, 0x3200))  # katakana phonetic extensions
+    cps |= set(range(0xFF00, 0xFFF0))  # fullwidth and halfwidth forms
     cps |= set(range(0x2000, 0x2070))  # general punctuation
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write("\n".join("U+%04X" % c for c in sorted(cps)))

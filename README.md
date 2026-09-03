@@ -31,7 +31,7 @@ cd love2d
 love .
 ```
 
-Setup is written as JSONL to `~/.causewaybayzkp/setup.jsonl`. F11 fullscreen, F1 portrait/landscape. Details in `love2d/README.md`.
+Setup is written as JSONL to `~/.causewaybayzkp/setup.jsonl`. F11 fullscreen, F1 portrait/landscape, F3 language — English, 한국어, 粵語, 简体中文, 日本語, Čeština, Español. Details in `love2d/README.md`.
 
 ## Quest 2 — a real zk-SNARK (Rust, in the game over FFI)
 

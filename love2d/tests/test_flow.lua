@@ -105,7 +105,7 @@ return function(t)
     SFX.set(true)
   end)
 
-  t.it("language cycles and falls back to English", function()
+  t.it("language cycles through every language and falls back to English", function()
     local I18n = require "src.i18n"
     I18n.set("en")
     t.eq(I18n.t("hint"), "HINT")
@@ -113,11 +113,25 @@ return function(t)
     t.eq(I18n.lang, "ko")
     t.eq(I18n.t("hint"), "힌트")
     t.eq(I18n.pick({ en = "a" }), "a", "missing translation falls back")
-    I18n.cycle()
-    t.eq(I18n.lang, "yue")
-    I18n.cycle()
+    -- one full turn of the wheel comes back to where it started
+    for i = 2, #I18n.LANGS do
+      I18n.cycle()
+      t.eq(I18n.lang, I18n.LANGS[i % #I18n.LANGS + 1], "step " .. i)
+    end
     t.eq(I18n.lang, "en")
     t.eq(I18n.pick("plain"), "plain")
+  end)
+
+  t.it("every language has a display name and every UI string", function()
+    local I18n = require "src.i18n"
+    for _, lang in ipairs(I18n.LANGS) do
+      t.ok(I18n.NAMES[lang] and #I18n.NAMES[lang] > 0, lang .. " display name")
+      for _, key in ipairs({ "hint", "ok", "next", "hud_map", "map_help", "msg_wrong" }) do
+        I18n.set(lang)
+        t.ok(#I18n.t(key) > 0, lang .. " " .. key)
+      end
+    end
+    I18n.set("en")
   end)
 
   t.it("answers compare loosely", function()
@@ -128,6 +142,15 @@ return function(t)
     t.eq(Game.accepts("1", { "-1" }), false)
     t.eq(Game.accepts("", { "18" }), false)
     t.eq(Game.accepts("19", { "18" }), false)
+    -- accents are optional: a Czech or Spanish answer types on any keyboard
+    t.eq(Game.accepts("reseni", { "řešení" }), true)
+    t.eq(Game.accepts("ÚPLNOST", { "úplnost" }), true)
+    t.eq(Game.accepts("ocultacion", { "ocultación" }), true)
+    t.eq(Game.accepts("si", { "sí" }), true)
+    t.eq(Game.accepts("vetsi nebo rovno", { "větší nebo rovno" }), true)
+    -- folding must not smear CJK together
+    t.eq(Game.accepts("隐藏", { "隐藏" }), true)
+    t.eq(Game.accepts("隐藏", { "隱藏" }), false)
     t.eq(Game.accepts(">=", { ">=" }), true)
     t.eq(Game.accepts("> =", { ">=" }), true)
   end)
@@ -365,23 +388,38 @@ return function(t)
     press(g, "3")
     press(g, "f5")
     t.eq(g.auto, true)
-    t.ok(runUntil(g, function()
-      return g.hintLevel == 1
-    end, 40), "AUTO opens the nudge first")
-    t.ok(runUntil(g, function()
-      return g.input ~= ""
-    end, 40), "then types")
-    t.ok(runUntil(g, function()
-      return g.stage == 2
-    end, 200), "then submits and moves to the next blank")
+    t.ok(
+      runUntil(g, function()
+        return g.hintLevel == 1
+      end, 40),
+      "AUTO opens the nudge first"
+    )
+    t.ok(
+      runUntil(g, function()
+        return g.input ~= ""
+      end, 40),
+      "then types"
+    )
+    t.ok(
+      runUntil(g, function()
+        return g.stage == 2
+      end, 200),
+      "then submits and moves to the next blank"
+    )
     t.eq(g.hintLevel, 0, "the nudge closes with the blank")
-    t.ok(runUntil(g, function()
-      return g.solved
-    end, 600), "AUTO clears the street")
+    t.ok(
+      runUntil(g, function()
+        return g.solved
+      end, 600),
+      "AUTO clears the street"
+    )
     t.eq(g.auto, true, "still running after CLEAR")
-    t.ok(runUntil(g, function()
-      return g.step == 4
-    end, 60), "walks to the next street by itself")
+    t.ok(
+      runUntil(g, function()
+        return g.step == 4
+      end, 60),
+      "walks to the next street by itself"
+    )
     t.eq(g.stage, 1)
     press(g, "escape")
     t.eq(g.auto, false, "ESC stops AUTO")
@@ -392,9 +430,12 @@ return function(t)
     local g = fresh()
     press(g, "1")
     g:startAuto()
-    t.ok(runUntil(g, function()
-      return g.state == "win"
-    end, 6000), "reaches the stamp")
+    t.ok(
+      runUntil(g, function()
+        return g.state == "win"
+      end, 6000),
+      "reaches the stamp"
+    )
     t.eq(g:allCleared(), true)
     t.eq(g.auto, false, "AUTO stops on the stamp")
   end)
@@ -406,9 +447,12 @@ return function(t)
     press(g, "escape")
     press(g, "1")
     g:startAuto()
-    t.ok(runUntil(g, function()
-      return g.step ~= 1
-    end, 1500), "leaves street 1")
+    t.ok(
+      runUntil(g, function()
+        return g.step ~= 1
+      end, 1500),
+      "leaves street 1"
+    )
     t.eq(g.step, 3, "street 2 is CLEAR, so 3 comes next")
     type_(g, "x")
     t.eq(g.auto, false, "typing stops AUTO")

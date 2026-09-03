@@ -109,6 +109,23 @@ with a one-line note if it is not installed or not connected.
 > The desk has **no authentication**. Anyone who can reach the port can use it. That is
 > fine on a tailnet or a home LAN; do not run it on open Wi-Fi.
 
+## Release build
+
+`make package` from the repository root builds the optimised binary and the shared library the game loads, signs
+both, and leaves them in `dist/`. Signing is ad-hoc unless `APPLE_SIGNING_IDENTITY` names a Developer ID
+certificate, in which case `scripts/codesign-binary.sh` also notarizes them; off macOS it does nothing.
+
+```bash
+make package        # dist/gate18-snark + dist/libgate18_snark.dylib, signed
+make version        # the version of record, read from rust/Cargo.toml
+```
+
+The package step ends by running what it just built: the binary has to report that same version and it has to
+still reject a tampered proof, so nothing ships that was never executed.
+
+Pushing a tag like `v0.1.0` on `main` runs the same command on macOS and Linux, and attaches both tarballs to a
+GitHub release. The tag has to match `make version` or the workflow stops.
+
 ## Layout
 
 ```
@@ -118,6 +135,12 @@ python/zkp/sigma.py      Schnorr + bit 0/1 OR proofs
 python/zkp/identity.py   holder keys, issuer signature, challenge
 python/zkp/age.py        issue / prove / verify
 python/app.py            Gradio GATE 18 desk
+rust/src/sudoku.rs       the mini-sudoku circuit
+rust/src/api.rs          Groth16 setup / prove / verify
+rust/src/ffi.rs          the C ABI the game loads
+love2d/src/snark.lua     the LuaJIT ffi binding
+scripts/codesign-binary.sh  sign (and notarize) a release artifact
+Makefile                 make package, make test, make run
 ```
 
 ## License

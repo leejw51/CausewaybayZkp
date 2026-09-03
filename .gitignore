@@ -19,3 +19,4 @@ love2d/.drive-home/
 
 # Rust (quest 2 SNARK)
 rust/target/
+dist/

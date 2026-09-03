@@ -1,0 +1,206 @@
+# Release — build the signed GATE 18 release binary and attach it to a GitHub
+# release.
+#
+# Triggered by pushing a tag like `v0.1.0` on main, which must match the version
+# of record — `make version`, read from rust/Cargo.toml. Or manually via
+# workflow_dispatch for a dry run that uploads the artifacts without creating a
+# release.
+#
+#   macos-latest  → gate18-snark-<version>-<arch>-apple-darwin.tar.gz
+#   ubuntu-latest → gate18-snark-<version>-x86_64-unknown-linux-gnu.tar.gz
+#
+# `make package` drives everything: cargo builds the optimised binary and the
+# shared library the Love2D game loads over ffi, scripts/codesign-binary.sh
+# signs (and notarizes) each one on macOS and does nothing on Linux, and
+# `package-verify` then runs the packaged binary — it must report the tagged
+# version and it must still reject a tampered proof — so what ships is what was
+# checked.
+#
+# Signing uses the Developer ID certificate from the repository secrets
+# (MACOS_CERTIFICATE_P12_BASE64 / MACOS_CERTIFICATE_PASSWORD) and notarization
+# uses APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / TEAM_ID. Without the secrets
+# everything falls back to ad-hoc signing, so dry runs still produce binaries.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `git branch --contains` below needs the branches, not just the tag.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # A tag pointing at a commit that never landed on main is a mistake worth
+      # stopping for, not shipping. workflow_dispatch skips this — a dry run is
+      # allowed to be run from anywhere.
+      - name: Check the tag is on main
+        if: github.ref_type == 'tag'
+        run: |
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '^\s*origin/main$'; then
+            echo "tag ${{ github.ref_name }} points at a commit that is not on main" >&2
+            exit 1
+          fi
+
+      # `make version` reads rust/Cargo.toml, the one place a release number
+      # lives. This settles both questions at once: one version, and it is the
+      # tagged one.
+      - name: Resolve the version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(make version)
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${TAG#v}" != "$version" ]; then
+            echo "tag $TAG does not match the version of record $version" >&2
+            echo "bump rust/Cargo.toml, or retag" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${{ matrix.target }}" = "apple-darwin" ]; then
+            echo "triple=$(uname -m)-apple-darwin" >> "$GITHUB_OUTPUT"
+          else
+            echo "triple=${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Imports the Developer ID certificate into a throwaway keychain and
+      # exports APPLE_SIGNING_IDENTITY for the build. Falls back to ad-hoc
+      # signing when the secret is absent (e.g. a fork's dry run).
+      - name: Import codesigning certificate
+        if: runner.os == 'macOS'
+        env:
+          P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ]; then
+            echo "::warning::MACOS_CERTIFICATE_P12_BASE64 not set, using ad-hoc signing"
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          CERT_INFO=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" || true)
+          if [ -n "$CERT_INFO" ]; then
+            CERT_ID=$(echo "$CERT_INFO" | head -1 | awk -F'"' '{print $2}')
+            echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+            echo "Found certificate: $CERT_ID"
+          else
+            echo "::warning::No Developer ID Application certificate found, using ad-hoc signing"
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          fi
+
+      # scripts/codesign-binary.sh reads APPLE_SIGNING_IDENTITY to sign each
+      # artifact and APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID to notarize it.
+      - name: Package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          if [ "${APPLE_SIGNING_IDENTITY:--}" = "-" ]; then
+            # An ad-hoc-signed binary cannot be notarized.
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          make package
+
+      # One archive per platform, holding the binary and the shared library the
+      # Love2D game loads beside it. COPYFILE_DISABLE keeps macOS from smuggling
+      # ._ resource-fork files in.
+      - name: Archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TRIPLE: ${{ steps.version.outputs.triple }}
+        run: |
+          mkdir -p artifacts stage
+          cp dist/gate18-snark stage/
+          cp dist/libgate18_snark.* stage/
+          cp LICENSE README.md stage/
+          name="gate18-snark-$VERSION-$TRIPLE.tar.gz"
+          COPYFILE_DISABLE=1 tar -czf "artifacts/$name" -C stage .
+          ( cd artifacts && shasum -a 256 *.tar.gz > "SHA256SUMS-$TRIPLE" )
+          cat "artifacts/SHA256SUMS-$TRIPLE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gate18-snark-${{ steps.version.outputs.triple }}
+          path: artifacts/*
+          if-no-files-found: error
+
+      - name: Cleanup keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+  release:
+    name: Create GitHub release
+    needs: [package]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            Quest 2's Groth16 zk-SNARK as a standalone binary, with the shared
+            library the Love2D game loads over ffi beside it.
+
+            | archive | what is inside |
+            | --- | --- |
+            | `gate18-snark-…-apple-darwin.tar.gz` | the macOS build, signed |
+            | `gate18-snark-…-linux-gnu.tar.gz` | the Linux build |
+
+            Verify a download against its `SHA256SUMS-…` file, then:
+
+            ```sh
+            tar -xzf gate18-snark-*.tar.gz
+            ./gate18-snark --version
+            ./gate18-snark --tamper
+            ```
+
+            ⚠️ Educational software. Not audited, not for real secrets.

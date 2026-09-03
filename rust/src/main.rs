@@ -5,6 +5,7 @@
 //!   gate18-snark --tamper   flip one byte of a good proof: the verifier says no
 //!   gate18-snark --info     circuit and key facts, no proof
 //!   gate18-snark --json     machine-readable output (any mode)
+//!   gate18-snark --version  the version of record, and nothing else
 
 use gate18_snark::api;
 use gate18_snark::sudoku::{render, DEMO_CLUES, DEMO_SOLUTION};
@@ -36,6 +37,13 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let json = args.iter().any(|a| a == "--json");
     let mode = args.iter().find(|a| a.as_str() != "--json").map(|s| s.as_str()).unwrap_or("");
+
+    // Before the banner and before any proving: packaging asks a binary what
+    // it is, and the answer has to be cheap and the last word on the line.
+    if mode == "--version" {
+        println!("gate18-snark {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
 
     if !json {
         println!("GATE 18  quest 2  //  Groth16 on BN254 (arkworks)\n");
@@ -73,7 +81,7 @@ fn main() {
         }
         "" => print_report(&api::prove(&DEMO_CLUES, &DEMO_SOLUTION), json),
         other => {
-            eprintln!("unknown option {other}; try --info, --cheat, --tamper, --json");
+            eprintln!("unknown option {other}; try --info, --cheat, --tamper, --json, --version");
             std::process::exit(2);
         }
     }

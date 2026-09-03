@@ -52,8 +52,42 @@ local function sourceDir()
   return "."
 end
 
+-- The directory holding the running executable, asked of the operating system.
+--
+-- A double-clicked .app inherits no environment and its source is a .love
+-- archive inside the bundle, so neither GATE18_SNARK_LIB nor sourceDir() can
+-- reach Contents/Frameworks — where a signed bundle has to keep the library,
+-- because that is the only place codesign will accept a nested Mach-O. This is
+-- how the packaged game finds its own library rather than a stale build.
+local function executableDir()
+  local ok, mod = pcall(require, "ffi")
+  if not ok then
+    return nil
+  end
+  local okDecl = pcall(
+    mod.cdef,
+    [[int _NSGetExecutablePath(char* buf, unsigned int* bufsize);]]
+  )
+  if not okDecl then
+    return nil
+  end
+  local okCall, dir = pcall(function()
+    local size = mod.new("unsigned int[1]", 4096)
+    local buf = mod.new("char[?]", 4096)
+    if mod.C._NSGetExecutablePath(buf, size) ~= 0 then
+      return nil
+    end
+    return mod.string(buf):match("^(.*)/[^/]*$")
+  end)
+  if okCall then
+    return dir
+  end
+  return nil
+end
+
 -- Where to look, in order. The env var wins so a packaged build can point
--- anywhere; otherwise the cargo output next to the game. Tests replace this.
+-- anywhere; then the bundle the game is running from, then the cargo output
+-- next to a checkout. Tests replace this.
 function Snark.candidates()
   local list = {}
   local env = os.getenv("GATE18_SNARK_LIB")
@@ -61,8 +95,20 @@ function Snark.candidates()
     list[#list + 1] = env
   end
   local names = { "libgate18_snark.dylib", "libgate18_snark.so", "gate18_snark.dll" }
+  local dirs = {}
+  local exe = executableDir()
+  if exe then
+    -- Contents/MacOS/love -> Contents/Frameworks, and beside the executable
+    -- for a plain directory layout.
+    dirs[#dirs + 1] = exe .. "/../Frameworks"
+    dirs[#dirs + 1] = exe
+  end
   local base = sourceDir()
-  for _, dir in ipairs({ base .. "/lib", base .. "/../rust/target/release", base .. "/../rust/target/debug" }) do
+  dirs[#dirs + 1] = base .. "/lib"
+  dirs[#dirs + 1] = base .. "/Contents/Frameworks"
+  dirs[#dirs + 1] = base .. "/../rust/target/release"
+  dirs[#dirs + 1] = base .. "/../rust/target/debug"
+  for _, dir in ipairs(dirs) do
     for _, n in ipairs(names) do
       list[#list + 1] = dir .. "/" .. n
     end

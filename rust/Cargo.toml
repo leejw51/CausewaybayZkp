@@ -1,6 +1,6 @@
 [package]
 name = "gate18_snark"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "GATE 18 quest 2: a real Groth16 zk-SNARK (BN254, arkworks) for a 4x4 mini-sudoku, exposed over a C ABI for the Love2D game"
 license = "MIT"

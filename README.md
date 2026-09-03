@@ -123,8 +123,23 @@ make version        # the version of record, read from rust/Cargo.toml
 The package step ends by running what it just built: the binary has to report that same version and it has to
 still reject a tampered proof, so nothing ships that was never executed.
 
-Pushing a tag like `v0.1.0` on `main` runs the same command on macOS and Linux, and attaches both tarballs to a
-GitHub release. The tag has to match `make version` or the workflow stops.
+The game ships as a bundle of its own. `make app` downloads LÖVE, embeds it, puts the game and the SNARK library
+inside, builds the icon, and signs the whole thing inside-out — a `.app` you can hand to somebody who has never
+heard of LÖVE. It then starts the bundle and checks it draws a frame and loads its own library out of
+`Contents/Frameworks`, which is the one path a checkout cannot fake.
+
+```bash
+make app            # love2d/build/GATE18.app, signed
+make notarize       # send it to Apple and staple the ticket
+make gatekeeper     # assess it the way Finder does
+```
+
+Signing alone is not enough for a bundle somebody downloads. Since macOS 10.15 anything outside the App Store must
+also be notarized, so `make notarize` is what separates an app that opens from one that says Apple could not verify
+it. A `.app` can carry a stapled ticket, so a notarized bundle needs no network on first run.
+
+Pushing a tag like `v0.1.0` on `main` builds all of it — the binary on macOS and Linux, the app on macOS — and
+attaches everything to a GitHub release. The tag has to match `make version` or the workflow stops.
 
 ## Layout
 
@@ -140,7 +155,8 @@ rust/src/api.rs          Groth16 setup / prove / verify
 rust/src/ffi.rs          the C ABI the game loads
 love2d/src/snark.lua     the LuaJIT ffi binding
 scripts/codesign-binary.sh  sign (and notarize) a release artifact
-Makefile                 make package, make test, make run
+love2d/Makefile          make app: the game as a macOS bundle
+Makefile                 make package, make app, make test, make run
 ```
 
 ## License

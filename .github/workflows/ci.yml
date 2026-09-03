@@ -30,11 +30,37 @@ jobs:
           pip install --quiet "ruff>=0.6.0"
           ruff check zkp tests app.py i18n.py
 
+  rust:
+    name: SNARK tests (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Groth16 self-tests
+        working-directory: rust
+        run: cargo test --release
+      - name: CLI demo
+        working-directory: rust
+        run: cargo run --release -- --tamper
+
   love2d:
     name: Love2D tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The PROOF street calls the Rust library over ffi; build it so the
+      # live checks in tests/test_snark.lua run rather than skip.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build the SNARK library
+        working-directory: rust
+        run: cargo build --release
 
       # love needs a display even for the test run, so it goes under xvfb;
       # the runner has no sound card, so SDL gets the dummy audio driver.

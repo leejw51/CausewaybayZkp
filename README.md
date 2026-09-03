@@ -1,12 +1,11 @@
-# GATE 18 — adult age ZKP, from scratch
+# GATE 18 — two zero-knowledge proofs, from the ground up
 
 Prove you are 18 or over **without revealing your age**. No Circom, snarkjs, arkworks, or other ZKP frameworks. The core is Python `pow` + SHA-256.
 
 ## Protocol (study version)
 
 Everything runs in a **Schnorr group**: the 256-bit prime-order subgroup of the integers modulo a 259-bit prime \(p\).
-A group element is an ordinary integer, \(g^{x}\) is `pow(g, x, p)`, and there are **no elliptic curves anywhere** in this
-repo. ECDSA and Ed25519 run the same protocols in a different group, where an element is an \((x, y)\) point and the
+A group element is an ordinary integer, \(g^{x}\) is `pow(g, x, p)`, and quest 1 has **no elliptic curves anywhere** (quest 2, the SNARK below, is where a curve comes in). ECDSA and Ed25519 run the same protocols in a different group, where an element is an \((x, y)\) point and the
 operation is chord-and-tangent point addition. The algebra below is the same either way; only the group changes.
 
 1. **Pedersen commitment** \(C = g^{age}\, h^{r}\) hides the age.
@@ -33,6 +32,44 @@ love .
 ```
 
 Setup is written as JSONL to `~/.causewaybayzkp/setup.jsonl`. F11 fullscreen, F1 portrait/landscape. Details in `love2d/README.md`.
+
+## Quest 2 — a real zk-SNARK (Rust, in the game over FFI)
+
+The second quest is the *other* kind of ZKP. New mission: Mei solved Uncle Wing's **4×4 mini-sudoku** and wants the
+prize without showing the answer (the whole queue would copy it). The proof is a **Groth16 zk-SNARK on BN254**, built
+with [arkworks](https://github.com/arkworks-rs) in `rust/` — nothing hand-rolled this time, on purpose: quest 2 is
+about seeing what a production SNARK stack looks like next to quest 1's hand-made Sigma protocol.
+
+| | Quest 1 · GATE 18 | Quest 2 · PUZZLE |
+|---|---|---|
+| statement | age ≥ 18 | "this board has a solution" |
+| witness (secret) | age, r, sk | the 16 cells |
+| how the rule is written | Pedersen + bit OR-proofs | arithmetic circuit → R1CS (112 lines) → QAP |
+| setup | group parameters only | trusted setup: τ, α, β, γ, δ → pk (22 KB), vk (776 B) |
+| proof | a few KB, grows with the bits | **3 points, 128 bytes, always** |
+| verify | dozens of `pow`, linear | **4 pairings, ~1 ms, constant** |
+| curve | none (integers mod p) | BN254: G1, G2, GT |
+
+Seven streets teach it the same way as quest 1 — every variable explained on the screen it appears on: PUZZLE
+(secret / statement / witness) → CIRCUIT (only + and ×) → R1CS (one line per ×) → QAP (112 checks become one, at a
+secret point τ) → SETUP (toxic waste, pk / vk) → PAIRING (e([a]G1,[b]G2) = e(G1,G2)^ab) → PROOF. The last street
+runs the real thing: the game loads `libgate18_snark` through LuaJIT's `ffi`, proves, verifies, and shows the 128
+bytes, the timings, and a REJECT for the same proof against other clues.
+
+```bash
+cd rust
+cargo build --release          # the game finds target/release/libgate18_snark.{dylib,so,dll} by itself
+cargo test --release
+cargo run --release            # prove + verify the demo board in the terminal
+cargo run --release -- --cheat # a wrong solution: REJECT
+cargo run --release -- --tamper# C from another proof: REJECT
+```
+
+`rust/src/sudoku.rs` is the circuit (16 clue checks, 16 × `(v−1)(v−2)(v−3)(v−4) = 0`, 12 × sum = 10 and
+product = 24), `api.rs` is setup / prove / verify, `ffi.rs` the C ABI. The setup is seeded from a fixed seed so every
+run prints the same vk — that seed *is* the toxic waste, printed in the open so the SETUP street can talk about it;
+a real deployment runs a multi-party ceremony. Without the library the game still runs; the PROOF street says how
+to build it.
 
 ## Run the study desk
 

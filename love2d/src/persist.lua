@@ -109,8 +109,9 @@ function Persist.saveProgress(game)
   return append(Persist.PROGRESS, {
     event = "progress",
     state = game.state,
+    quest = game.quest or 1,
     step = game.step,
-    stage = game.stage,
+    stage = type(game.progressStage) == "function" and game:progressStage() or game.stage,
     solved = game.solved and true or false,
     cleared = cleared or {},
   })

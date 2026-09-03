@@ -13,7 +13,8 @@ local ease = require "src.ease"
 local E = ease
 local assets = require "src.assets"
 local sprites = require "src.sprites"
-local maps = require "src.data"
+local Quests = require "src.quests"
+local Snark = require "src.snark"
 local Layout = require "src.layout"
 local Persist = require "src.persist"
 local Theme = require "src.theme"
@@ -49,6 +50,8 @@ local HUD = {
 }
 local HINT_WAIT = 30
 local MAX_INPUT = 24
+-- AUTO: the game plays itself, pausing so the reader can follow (seconds)
+local AUTO = { read = 1.4, hint = 1.4, key = 0.11, pause = 0.7, learn = 1.8, clear = 2.4 }
 
 local function setC(c, a)
   love.graphics.setColor(c[1], c[2], c[3], a or c[4] or 1)
@@ -82,6 +85,79 @@ end
 
 local function inRect(x, y, r)
   return r and x >= r[1] and y >= r[2] and x < r[1] + r[3] and y < r[2] + r[4]
+end
+
+-- Where a label's ink really lands, relative to the y it is printed at.
+-- Press Start 2P fills its em from the top, but its CJK fallback (1.25x,
+-- see assets.tryFont) is taller and hangs below the baseline, so a button
+-- sized from font:getHeight() clips Korean and Cantonese. Rendered once per
+-- font + label into a scratch canvas and cached (weak on the font, so a
+-- rebuilt font set drops its entries).
+local inkCache = setmetatable({}, { __mode = "k" })
+local function labelInk(font, label)
+  label = tostring(label or "")
+  local perFont = inkCache[font]
+  if not perFont then
+    perFont = {}
+    inkCache[font] = perFont
+  end
+  local hit = perFont[label]
+  if hit then
+    return hit[1], hit[2]
+  end
+  local fh = font:getHeight()
+  local top, bot = 0, fh
+  local w = math.max(1, font:getWidth(label)) + 2
+  local ok, cv = pcall(love.graphics.newCanvas, w, fh * 3)
+  if ok and cv then
+    local prev = love.graphics.getCanvas()
+    love.graphics.push("all")
+    love.graphics.origin()
+    love.graphics.setScissor()
+    love.graphics.setShader()
+    love.graphics.setCanvas(cv)
+    love.graphics.clear(0, 0, 0, 0)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(font)
+    love.graphics.print(label, 1, fh)
+    love.graphics.setCanvas(prev)
+    love.graphics.pop()
+    local data = cv:newImageData()
+    local first, last
+    for yy = 0, fh * 3 - 1 do
+      for xx = 0, w - 1 do
+        local _, _, _, a = data:getPixel(xx, yy)
+        if a > 0.1 then
+          first = first or yy
+          last = yy
+          break
+        end
+      end
+    end
+    data:release()
+    cv:release()
+    if first then
+      top, bot = first - fh, last + 1 - fh
+    end
+  end
+  perFont[label] = { top, bot }
+  return top, bot
+end
+
+-- Button box that fits every one of `labels` in the button font: the widest
+-- label plus padW, the tallest ink plus the panel's 14 px frame and a little
+-- air. minW / minH keep short Latin labels from shrinking the buttons.
+local BTN_FRAME = 14 -- UI.panel: 8 px top, 6 px bottom
+local BTN_AIR = 6
+local function btnBox(labels, minW, padW, minH)
+  local font = fontOf("button")
+  local w, ink = 0, 0
+  for i = 1, #labels do
+    local top, bot = labelInk(font, labels[i])
+    w = math.max(w, font:getWidth(labels[i]))
+    ink = math.max(ink, bot - top)
+  end
+  return math.max(minW or 0, w + (padW or 0)), math.max(minH or 0, ink + BTN_FRAME + BTN_AIR)
 end
 
 -- Answers compare loosely: case, spaces, quotes, underscores, dashes and
@@ -141,9 +217,20 @@ end
 
 local Game = {}
 Game.__index = Game
-Game.maps = maps
+Game.quests = Quests
+Game.maps = Quests[1].maps
 Game.accepts = accepts
 Game.norm = norm
+
+-- The streets of the current quest (src/quests.lua). Every index in the
+-- game - step, map cursor, digit keys - is relative to this list.
+function Game:maps()
+  return Quests[self.quest].maps
+end
+
+function Game:questDef()
+  return Quests[self.quest]
+end
 
 function Game.new()
   local g = setmetatable({}, Game)
@@ -163,8 +250,10 @@ function Game.new()
   g.msg = ""
   g.msgKind = "idle"
   g.input = ""
+  g.quest = 1 -- index into Quests
   g.step = 1
   g.stage = 1
+  g.done = {} -- blanks answered in this street, by stage index
   g.solved = false
   g.player = { x = 200, facing = 1, walk = false }
   g.cam = 0
@@ -184,8 +273,14 @@ function Game.new()
   g.mapWalking = false
   g.mapHits = {}
   g.stationHits = {}
+  g.questHits = {}
+  g.snark = nil -- live SNARK report on the PROOF street
+  g.auto = false -- AUTO: solving by itself
+  g.autoPhase, g.autoT, g.autoChars = "read", 0, nil
+  g.actAuto = nil
   g.mapBtn = nil
   g.actHint, g.actOk, g.actNext = nil, nil, nil
+  g.actPrevStage, g.actNextStage = nil, nil
   g.swallowFrame = -1
   g.saved = nil
   return g
@@ -196,9 +291,16 @@ function Game:syncMetrics()
   PORT = Layout.isPortrait()
   assets.ensureFonts(Layout.uiScale())
   local stationH = fontOf("station"):getHeight()
-  local btnH = math.max(36, fontOf("button"):getHeight() + 18)
-  local btnW = math.max(112, fontOf("button"):getWidth("WIND") + 32)
-  TOP = math.max(PORT and 80 or 70, stationH + 52)
+  local btnW, btnH = btnBox({
+    T("hud_full"),
+    T("hud_wind"),
+    T("hud_port"),
+    T("hud_land"),
+    T("hud_map"),
+    T("hud_back"),
+    I18n.NAMES[I18n.lang] or "EN",
+  }, 112, 32, 36)
+  TOP = math.max(PORT and 80 or 70, stationH + 52, btnH + 20)
   local termShare = PORT and 0.52 or 0.55
   SCENE_H = math.floor(H * (1 - termShare)) - TOP
   local sceneMin = math.floor(H * (PORT and 0.32 or 0.38))
@@ -235,43 +337,89 @@ function Game:ingestProgress(rec)
   if type(rec) ~= "table" then
     return
   end
+  -- records from before quest 2 have no quest field: they are quest 1
+  local quest = tonumber(rec.quest) or 1
+  if not Quests[quest] then
+    quest = 1
+  end
+  self.quest = quest
   local step = tonumber(rec.step)
-  if step and step >= 1 and step <= #maps then
+  if step and step >= 1 and step <= #self:maps() then
     local stage = tonumber(rec.stage) or 1
-    stage = math.max(1, math.min(#maps[step].stages, stage))
-    self.saved = { step = step, stage = stage, solved = rec.solved and true or false }
+    stage = math.max(1, math.min(#self:maps()[step].stages, stage))
+    self.saved = { quest = quest, step = step, stage = stage, solved = rec.solved and true or false }
   end
   if step and not rec.cleared then
     -- legacy record without a cleared list: everything before step is done
     local last = rec.solved and step or step - 1
-    for i = 1, math.min(#maps, last) do
-      self.cleared[maps[i].id] = true
+    for i = 1, math.min(#self:maps(), last) do
+      self.cleared[self:maps()[i].id] = true
     end
   end
 end
 
 function Game:save()
   Persist.saveProgress(self)
-  self.saved = { step = self.step, stage = self.stage, solved = self.solved }
+  self.saved = { quest = self.quest, step = self.step, stage = self.stage, solved = self.solved }
 end
 
+-- Every CLEAR street of every quest, for progress.jsonl.
 function Game:clearedIds()
   local ids = {}
-  for i = 1, #maps do
-    if self.cleared[maps[i].id] then
-      ids[#ids + 1] = maps[i].id
+  for _, quest in ipairs(Quests) do
+    for i = 1, #quest.maps do
+      if self.cleared[quest.maps[i].id] then
+        ids[#ids + 1] = quest.maps[i].id
+      end
     end
   end
   return ids
 end
 
+-- CLEAR streets of one quest (the current one by default).
+function Game:clearedCount(q)
+  local n = 0
+  for _, m in ipairs(Quests[q or self.quest].maps) do
+    if self.cleared[m.id] then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+-- Switch quest. Only meaningful on the title and the map; the street list,
+-- the map cursor and the station strip all follow self.quest.
+function Game:setQuest(q)
+  q = ((tonumber(q) or 1) - 1) % #Quests + 1
+  if q == self.quest then
+    return
+  end
+  self.quest = q
+  self.snark = nil
+  if self.mapFrom == "play" then
+    -- the street we came from belongs to the other quest: no "resume"
+    self.mapFrom = "title"
+  end
+  if self.state == "map" then
+    self.mapCursor = self:firstOpen()
+    self.mapHeroAt = self.mapCursor
+    self.mapHeroX, self.mapHeroY = nil, nil
+    self.mapWalking = false
+  end
+  SFX.play("select")
+end
+
+function Game:toggleQuest()
+  self:setQuest(self.quest + 1)
+end
+
 function Game:isCleared(i)
-  local m = maps[i]
+  local m = self:maps()[i]
   return m ~= nil and self.cleared[m.id] == true
 end
 
 function Game:allCleared()
-  for i = 1, #maps do
+  for i = 1, #self:maps() do
     if not self:isCleared(i) then
       return false
     end
@@ -281,7 +429,7 @@ end
 
 -- First street that is not CLEAR yet; 1 when everything is done.
 function Game:firstOpen()
-  for i = 1, #maps do
+  for i = 1, #self:maps() do
     if not self:isCleared(i) then
       return i
     end
@@ -290,7 +438,7 @@ function Game:firstOpen()
 end
 
 function Game:markClear(i)
-  local m = maps[i] or self:map()
+  local m = self:maps()[i] or self:map()
   if not m then
     return
   end
@@ -303,6 +451,7 @@ end
 -- ---------------------------------------------------------------- states
 
 function Game:enterTitle()
+  self:stopAuto()
   self.state = "title"
   self.t = 0
   self.intro = 0
@@ -317,12 +466,13 @@ function Game:enterMap(from)
     from = self.mapFrom
   end
   self.mapFrom = from
+  self:stopAuto()
   self.state = "map"
   self.mapK = 0
   self.fade = math.min(self.fade, 0.35)
   if from == "play" then
     self.mapCursor = self.step
-  elseif self.saved and not self.saved.solved then
+  elseif self.saved and not self.saved.solved and (self.saved.quest or 1) == self.quest then
     self.mapCursor = self.saved.step -- a half-done street: pick up there
   else
     self.mapCursor = self:firstOpen()
@@ -354,7 +504,7 @@ end
 -- Portrait: a zig-zag from the bottom up.
 function Game:mapNodes()
   local nodes = {}
-  local n = #maps
+  local n = #self:maps()
   local panelH = self:mapPanelH()
   if PORT then
     local xs = { 0.26, 0.70, 0.30, 0.72, 0.28, 0.70, 0.42 }
@@ -420,7 +570,7 @@ end
 -- Start (or restart) street i. stage restores a saved position.
 -- quiet: no "select" blip (advance plays its own sweep)
 function Game:enterPlay(i, stage, quiet)
-  i = math.max(1, math.min(#maps, tonumber(i) or 1))
+  i = math.max(1, math.min(#self:maps(), tonumber(i) or 1))
   local resumeSame = self.state == "map" and self.mapFrom == "play" and i == self.step
   if resumeSame then
     self:leaveMap()
@@ -428,7 +578,11 @@ function Game:enterPlay(i, stage, quiet)
   end
   self:loadMap(i)
   if stage then
-    self.stage = math.max(1, math.min(#maps[i].stages, tonumber(stage) or 1))
+    self.stage = math.max(1, math.min(#self:maps()[i].stages, tonumber(stage) or 1))
+    -- a resumed street counts the blanks behind the cursor as answered
+    for k = 1, self.stage - 1 do
+      self.done[k] = true
+    end
   end
   self.state = "play"
   self.fade = 1
@@ -441,24 +595,33 @@ end
 
 -- Where "C" on the title goes: the half-done street, else the one after
 -- the last solved street, else the first street not yet CLEAR.
+-- Returns step, stage, quest.
 function Game:continueTarget()
   local s = self.saved
   if not s then
     return nil
   end
+  local q = s.quest or 1
+  local qmaps = Quests[q].maps
   if not s.solved then
-    return s.step, s.stage
+    return s.step, s.stage, q
   end
-  if s.step < #maps then
-    return s.step + 1, 1
+  if s.step < #qmaps then
+    return s.step + 1, 1, q
   end
-  return self:firstOpen(), 1
+  for i = 1, #qmaps do
+    if not self.cleared[qmaps[i].id] then
+      return i, 1, q
+    end
+  end
+  return 1, 1, q
 end
 
 -- Title "C": pick up where progress.jsonl left off.
 function Game:continue()
-  local step, stage = self:continueTarget()
+  local step, stage, q = self:continueTarget()
   if step then
+    self:setQuest(q)
     self:enterPlay(step, stage)
   else
     self:enterMap("title")
@@ -466,6 +629,7 @@ function Game:continue()
 end
 
 function Game:enterWin()
+  self.auto = false
   self.state = "win"
   self.winT = 0
   SFX.play("win")
@@ -477,6 +641,8 @@ end
 function Game:loadMap(i)
   self.step = i
   self.stage = 1
+  self.done = {}
+  self.snark = nil
   self.solved = false
   self:setHint(0)
   self.hintAuto = false
@@ -486,7 +652,7 @@ function Game:loadMap(i)
   self.msgKind = "idle"
   self.stamp = 0
   self.hop = 0
-  local m = maps[i]
+  local m = self:maps()[i]
   self.player.x = m.spawn
   self.player.facing = 1
   self.player.walk = false
@@ -497,7 +663,7 @@ function Game:loadMap(i)
 end
 
 function Game:map()
-  return maps[self.step]
+  return self:maps()[self.step]
 end
 
 function Game:currentStage()
@@ -578,6 +744,9 @@ end
 function Game:updatePlay(dt)
   self.mapT = self.mapT + dt
   local m = self:map()
+  if self.auto then
+    self:updateAuto(dt)
+  end
   self.player.walk = false
   -- Arrows walk only after CLEAR. While a blank is open the keyboard types.
   if self.solved then
@@ -615,6 +784,112 @@ function Game:updatePlay(dt)
   end
   self.hintK = E.smooth(self.hintK, self.hintOn and 1 or 0, dt, 10)
   self.enterK = math.min(1, self.mapT * 2.4)
+end
+
+-- ---------------------------------------------------------------- auto
+--
+-- AUTO plays the quiz for the reader: read the question, open the nudge,
+-- type the answer one key at a time, submit, sit on the explanation, and
+-- after CLEAR walk on to the next open street until the stamp. Any key or
+-- click of the reader's own stops it.
+
+local function utf8chars(str)
+  local out = {}
+  for ch in tostring(str):gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    out[#out + 1] = ch
+  end
+  return out
+end
+
+function Game:startAuto()
+  if self.state ~= "play" then
+    return
+  end
+  self.auto = true
+  self.autoPhase = "read"
+  self.autoT = 0
+  self.autoChars = nil
+  self.idle = 0
+  SFX.play("select")
+end
+
+function Game:stopAuto()
+  if self.auto then
+    self.auto = false
+    SFX.play("back")
+  end
+end
+
+function Game:toggleAuto()
+  if self.auto then
+    self:stopAuto()
+  else
+    self:startAuto()
+  end
+end
+
+-- After CLEAR: the next open street, else the stamp.
+function Game:autoAdvance()
+  if self:allCleared() then
+    self:enterWin()
+    return
+  end
+  local n = #self:maps()
+  local nxt
+  for k = 1, n do
+    local i = (self.step + k - 1) % n + 1
+    if not self:isCleared(i) then
+      nxt = i
+      break
+    end
+  end
+  SFX.play("next")
+  self:enterPlay(nxt or self:firstOpen(), nil, true)
+  self.autoPhase = "read"
+  self.autoT = 0
+  self.autoChars = nil
+end
+
+function Game:updateAuto(dt)
+  self.autoT = self.autoT + dt
+  self.idle = 0 -- the 30 s nudge stays quiet; AUTO opens its own
+  if self.solved then
+    if self.autoT >= AUTO.clear then
+      self:autoAdvance()
+    end
+    return
+  end
+  local ph = self.autoPhase
+  if ph == "read" then
+    if self.autoT >= AUTO.read then
+      self:setHint(1)
+      self.autoPhase, self.autoT = "hint", 0
+    end
+  elseif ph == "hint" then
+    if self.autoT >= AUTO.hint then
+      local st = self:currentStage()
+      self.autoChars = utf8chars(st.answer or st.accept[1])
+      self.input = ""
+      self.autoPhase, self.autoT = "type", 0
+    end
+  elseif ph == "type" then
+    local chars = self.autoChars or {}
+    local typed = #utf8chars(self.input)
+    if typed < #chars then
+      if self.autoT >= AUTO.key then
+        self.input = self.input .. chars[typed + 1]
+        self.autoT = 0
+        SFX.play("type")
+      end
+    elseif self.autoT >= AUTO.pause then
+      self:submit()
+      self.autoPhase, self.autoT = "learn", 0
+    end
+  elseif ph == "learn" then
+    if self.autoT >= AUTO.learn then
+      self.autoPhase, self.autoT = "read", 0
+    end
+  end
 end
 
 -- ---------------------------------------------------------------- quiz
@@ -660,9 +935,11 @@ function Game:submit()
     self.hop = 0.55
     self.idle = 0
     self:burst(W * 0.5, TOP + SCENE_H * 0.45, 36)
-    if self.stage < #m.stages then
+    self.done[self.stage] = true
+    local open = self:firstOpenStage()
+    if open then
       SFX.play(st.answer == "DENY" and "deny" or "ok")
-      self.stage = self.stage + 1
+      self.stage = open
       self.input = ""
       self:setHint(0)
       self.hintAuto = false
@@ -702,7 +979,7 @@ function Game:advance()
     self:enterWin()
     return
   end
-  if self.step >= #maps then
+  if self.step >= #self:maps() then
     self:enterMap("play")
     return
   end
@@ -710,16 +987,70 @@ function Game:advance()
   self:enterPlay(self.step + 1, nil, true)
 end
 
+-- The first blank in this street not yet answered, in order; nil once every
+-- blank is done. After an answer the cursor moves here, so answering out of
+-- order (PREV / NEXT browse freely) still visits every blank before CLEAR.
+function Game:firstOpenStage()
+  for k = 1, #self:map().stages do
+    if not self.done[k] then
+      return k
+    end
+  end
+  return nil
+end
+
+-- What progress.jsonl records as the stage: the first open blank, not the
+-- one being browsed, so a resume lands on the work and never counts a
+-- blank that was only looked at as answered.
+function Game:progressStage()
+  return self:firstOpenStage() or #self:map().stages
+end
+
+-- PREV / NEXT page through the blanks of the current street, cleared or not,
+-- so a reader can re-read a line or peek ahead. They stop at the street's
+-- first and last blank; streets are still changed from the map or the
+-- station strip. Moving clears the typed text and the hint: each blank is
+-- its own question.
+function Game:hasStage(k)
+  return k >= 1 and k <= #self:map().stages
+end
+
+function Game:gotoStage(k)
+  if self.state ~= "play" or not self:hasStage(k) or k == self.stage then
+    return
+  end
+  self.stage = k
+  self.input = ""
+  self.msg = ""
+  self.msgKind = "idle"
+  self:setHint(0)
+  self.hintAuto = false
+  self.idle = 0
+  SFX.play("move")
+  self:save()
+end
+
+function Game:prevStage()
+  self:gotoStage(self.stage - 1)
+end
+
+function Game:nextStage()
+  self:gotoStage(self.stage + 1)
+end
+
 -- ---------------------------------------------------------------- draw
 
-function Game:pixBtn(x, y, w, h, label, lit)
-  local hit = Layout.hit(x, y, w, h)
+-- dim: shown but out of reach (PREV on the first street, NEXT on the last).
+function Game:pixBtn(x, y, w, h, label, lit, dim)
+  local hit = not dim and Layout.hit(x, y, w, h)
   local font = fontOf("button")
-  UI.panel(x, y, w, h, (lit or hit) and Theme.coin or Theme.panel)
+  UI.panel(x, y, w, h, dim and Theme.dim or ((lit or hit) and Theme.coin or Theme.panel))
   love.graphics.setFont(font)
-  love.graphics.setColor(Theme.ink)
-  local fh = font:getHeight()
-  love.graphics.printf(label, x, y + math.floor((h - fh) * 0.5) - 2, w, "center")
+  love.graphics.setColor(Theme.ink[1], Theme.ink[2], Theme.ink[3], dim and 0.5 or 1)
+  -- center the ink, not the font box, inside the panel's inner face
+  local top, bot = labelInk(font, label)
+  local ty = y + 8 + math.floor((h - BTN_FRAME - (bot - top)) * 0.5) - top
+  love.graphics.printf(label, x, ty, w, "center")
 end
 
 function Game:drawHud()
@@ -815,7 +1146,7 @@ function Game:drawTitle()
   sprites.draw("clerk", W * 0.78, gy, { t = self.t, facing = -1, h = ch })
   sprites.item("item_beer", W * 0.88, gy - ch * 0.28, ch * 0.38, math.sin(self.t) * 0.1)
 
-  local bar = 24 + uh + 6 + mh + 6 + mh + 12
+  local bar = 24 + uh + 6 + mh + 6 + mh + 6 + mh + 12
   UI.panel(12, H - bar - 8, W - 24, bar, Theme.panel)
   local blink = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(self.t * 3.2))
   love.graphics.setFont(uiF)
@@ -823,14 +1154,30 @@ function Game:drawTitle()
   love.graphics.printf(T("title_enter"), 12, H - bar + 10, W - 24, "center")
   love.graphics.setFont(smF)
   setC(Theme.brick, 0.95 * k)
-  local target = self:continueTarget()
+  local target, _, tq = self:continueTarget()
   if target then
-    local m = maps[target]
-    local n = #self:clearedIds()
-    love.graphics.printf(T("title_continue", m.station, n, #maps), 12, H - bar + 12 + uh, W - 24, "center")
+    local m = Quests[tq].maps[target]
+    local n = self:clearedCount(tq)
+    love.graphics.printf(
+      Quests[tq].tag .. "  " .. T("title_continue", m.station, n, #Quests[tq].maps),
+      12,
+      H - bar + 12 + uh,
+      W - 24,
+      "center"
+    )
   else
     love.graphics.printf(T("title_fresh"), 12, H - bar + 12 + uh, W - 24, "center")
   end
+  -- which of the two quests ENTER opens
+  local quest = self:questDef()
+  setC(Theme.navy, 0.95 * k)
+  love.graphics.printf(
+    T("quest_tab", self.quest) .. "   " .. P(quest.name),
+    12,
+    H - bar + 12 + uh + mh + 6,
+    W - 24,
+    "center"
+  )
   setC(Theme.ink, 0.8 * k)
   love.graphics.printf(T("title_help"), 12, H - 16 - mh, W - 24, "center")
 end
@@ -838,18 +1185,18 @@ end
 function Game:drawStations(m)
   UI.bar(0, 0, W, TOP)
   local font = fontOf("station")
-  local n = #maps
+  local n = #self:maps()
   local x0, x1 = 28, HUD.lang[1] - 16
   local span = (x1 - x0) / math.max(1, n - 1)
   local maxW = 0
   for i = 1, n do
-    maxW = math.max(maxW, font:getWidth(maps[i].station))
+    maxW = math.max(maxW, font:getWidth(self:maps()[i].station))
   end
   if span < maxW + 8 then
     font = fontOf("stationSm") or font
     maxW = 0
     for i = 1, n do
-      maxW = math.max(maxW, font:getWidth(maps[i].station))
+      maxW = math.max(maxW, font:getWidth(self:maps()[i].station))
     end
   end
   local showNames = span >= maxW + 4
@@ -888,7 +1235,7 @@ function Game:drawStations(m)
     self.stationHits[i] = { hitX, 0, boxW, TOP }
     if showNames then
       love.graphics.setColor(COL.cream[1], COL.cream[2], COL.cream[3], on and 1 or 0.7)
-      love.graphics.printf(maps[i].station, hitX, labelY, boxW, "center")
+      love.graphics.printf(self:maps()[i].station, hitX, labelY, boxW, "center")
     end
   end
   if not showNames then
@@ -977,8 +1324,18 @@ function Game:drawMap()
   end
 
   local nodes = self:mapNodes()
-  local n = #maps
+  local n = #self:maps()
   local labelF = PORT and fontOf("stationSm") or fontOf("station")
+
+  -- quest tabs: Q1 / Q2, the lit one is open
+  self.questHits = {}
+  local tabF = fontOf("button")
+  local tabW = math.max(64, tabF:getWidth("Q2") + 28)
+  for q = 1, #Quests do
+    local r = { 12 + (q - 1) * (tabW + 8), HUD.full[2], tabW, HUD.full[4] }
+    self.questHits[q] = r
+    self:pixBtn(r[1], r[2], r[3], r[4], Quests[q].tag, q == self.quest)
+  end
 
   -- dotted path; the stretch after a cleared street lights up gold
   for i = 1, n - 1 do
@@ -1000,7 +1357,7 @@ function Game:drawMap()
   -- level dots
   self.mapHits = {}
   for i = 1, n do
-    local m = maps[i]
+    local m = self:maps()[i]
     local nd = nodes[i]
     local cleared = self:isCleared(i)
     local here = self.mapFrom == "play" and i == self.step
@@ -1062,15 +1419,15 @@ function Game:drawMap()
   local panelH = self:mapPanelH()
   local py = H - panelH - 8 + (1 - k) * 40
   UI.panel(pad, py, W - pad * 2, panelH, Theme.panel)
-  local m = maps[self.mapCursor]
+  local m = self:maps()[self.mapCursor]
   local cleared = self:isCleared(self.mapCursor)
   local here = self.mapFrom == "play" and self.mapCursor == self.step
   love.graphics.setFont(uiF)
   setC(Theme.ink)
-  love.graphics.print(string.format("%d  %s", self.mapCursor, m.station), pad + 18, py + 14)
+  love.graphics.print(string.format("%s  %d  %s", self:questDef().tag, self.mapCursor, m.station), pad + 18, py + 14)
   local tag = cleared and T("clear") or (here and T("here") or "")
-  local nClear = #self:clearedIds()
-  local right = T("clear_count", nClear, #maps)
+  local nClear = self:clearedCount()
+  local right = T("clear_count", nClear, #self:maps())
   if tag ~= "" then
     right = tag .. "    " .. right
   end
@@ -1099,7 +1456,7 @@ function Game:drawPlay()
   love.graphics.pop()
 
   local labelF = fontOf("station")
-  local label = T("map_label", self.step, #maps, P(m.title))
+  local label = T("map_label", self:questDef().tag, self.step, #self:maps(), P(m.title))
   love.graphics.setFont(labelF)
   local lw = math.min(W - 24, labelF:getWidth(label) + 32)
   local lh = labelF:getHeight() + 16
@@ -1113,8 +1470,8 @@ function Game:drawPlay()
     local uiF = assets.font.ui
     local text
     if self:allCleared() then
-      text = T("clear_stamp")
-    elseif self.step >= #maps then
+      text = T(self.quest == 1 and "clear_stamp" or "clear_prize")
+    elseif self.step >= #self:maps() then
       text = T("clear_map")
     else
       text = T("clear_next")
@@ -1359,6 +1716,331 @@ function Game.viz.beer(self, m)
   end
 end
 
+-- ---------------------------------------------------------------- quest 2 scenery
+--
+-- The SNARK streets draw their idea in the scene: the board, the gates, the
+-- witness vector, the curve, the ceremony, the mirror, and on PROOF the real
+-- proof coming back from Rust over ffi. Labels here are English like the
+-- station names; the translated explanation is in the terminal below.
+
+local function chip(x, y, w, h, text, fill, col, font)
+  font = font or assets.font.ui
+  setC(Theme.ink, 0.9)
+  roundrect("fill", x, y, w, h, 6)
+  setC(fill or COL.paper)
+  roundrect("fill", x + 2, y + 2, w - 4, h - 4, 5)
+  love.graphics.setFont(font)
+  setC(col or COL.cream)
+  love.graphics.printf(text, x, y + math.floor((h - font:getHeight()) * 0.5), w, "center")
+end
+
+local function arrow(x1, y, x2, col)
+  setC(col or COL.cream, 0.8)
+  love.graphics.setLineWidth(3)
+  love.graphics.line(x1, y, x2 - 8, y)
+  love.graphics.polygon("fill", x2, y, x2 - 12, y - 7, x2 - 12, y + 7)
+  love.graphics.setLineWidth(1)
+end
+
+local DARK = { 0.06, 0.05, 0.14, 1 }
+local GOLDBG = { 0.20, 0.16, 0.06, 0.95 }
+local PINKBG = { 0.20, 0.06, 0.12, 0.95 }
+local GREENBG = { 0.05, 0.22, 0.10, 0.95 }
+local REDBG = { 0.30, 0.05, 0.05, 0.95 }
+
+-- Circuit and key sizes for the SETUP street: from the library when it is
+-- there, else the numbers rust/src prints (kept in sync by tests).
+local FACTS = { constraints = 112, variables = 89, pk_bytes = 22736, vk_bytes = 776 }
+local factsCache
+function Game:snarkFacts()
+  if not factsCache then
+    factsCache = (Snark.available() and Snark.info()) or FACTS
+  end
+  return factsCache
+end
+
+-- The 4x4 board. Clues in gold, secret cells as "?", the solution in green
+-- once the street is CLEAR (we stand on the prover's side of the counter).
+function Game:drawBoard(x, y, cell, reveal)
+  local d = Snark.DEMO
+  local f = assets.font.ui
+  for i = 0, 15 do
+    local r, c = math.floor(i / 4), i % 4
+    local cx, cy = x + c * cell, y + r * cell
+    local clue = d.clues[i + 1]
+    local box = (math.floor(r / 2) + math.floor(c / 2)) % 2
+    setC(Theme.ink)
+    love.graphics.rectangle("fill", cx, cy, cell, cell)
+    if clue ~= 0 then
+      setC(Theme.cream)
+    else
+      love.graphics.setColor(0.12 + box * 0.05, 0.10 + box * 0.05, 0.28, 1)
+    end
+    love.graphics.rectangle("fill", cx + 2, cy + 2, cell - 4, cell - 4)
+    love.graphics.setFont(f)
+    local text
+    if clue ~= 0 then
+      setC(Theme.ink)
+      text = tostring(clue)
+    elseif reveal then
+      setC(Theme.admit)
+      text = tostring(d.solution[i + 1])
+    else
+      setC(COL.neon, 0.45 + 0.55 * math.abs(math.sin(self.t * 2 + i)))
+      text = "?"
+    end
+    love.graphics.printf(text, cx, cy + math.floor((cell - f:getHeight()) * 0.5), cell, "center")
+  end
+  setC(Theme.coin)
+  love.graphics.rectangle("fill", x + cell * 2 - 2, y, 4, cell * 4)
+  love.graphics.rectangle("fill", x, y + cell * 2 - 2, cell * 4, 4)
+end
+
+function Game.viz.puzzle(self, m)
+  local cell = 42
+  self:drawBoard(300, 52, cell, self.solved)
+  local x = 300 + cell * 4 + 40
+  chip(x, 52, 330, 34, "clues: public", GOLDBG, Theme.coin)
+  chip(x, 96, 330, 34, "secret: 16 cells", PINKBG, COL.neon)
+  chip(x, 140, 330, 34, "statement: solvable", COL.paper, COL.cyan)
+  chip(
+    x,
+    184,
+    330,
+    34,
+    self.solved and "proof: 128 bytes" or "proof: ?",
+    COL.paper,
+    self.solved and Theme.admit or COL.cream
+  )
+end
+
+function Game.viz.circuit(self, m)
+  local y, x = 54, 290
+  local lit = self.solved or self.stage >= 2 or accepts(self.input, { "0" })
+  for i = 1, 4 do
+    chip(x, y, 92, 36, "(v-" .. i .. ")", lit and GOLDBG or COL.paper, lit and Theme.coin or COL.cream)
+    x = x + 92
+    if i < 4 then
+      chip(x + 3, y + 4, 28, 28, "x", DARK, COL.neon)
+      x = x + 34
+    end
+  end
+  arrow(x + 8, y + 18, x + 46)
+  chip(x + 50, y, 70, 36, "= 0", GREENBG, Theme.admit)
+  local y2 = y + 60
+  chip(290, y2, 210, 36, "a + b + c + d", COL.paper, COL.cyan)
+  arrow(506, y2 + 18, 544)
+  chip(548, y2, 90, 36, "= 10", GREENBG, Theme.admit)
+  chip(670, y2, 210, 36, "a x b x c x d", COL.paper, COL.cyan)
+  arrow(886, y2 + 18, 924)
+  chip(928, y2, 90, 36, "= 24", GREENBG, Theme.admit)
+  love.graphics.setFont(assets.font.small)
+  setC(COL.gold, 0.85)
+  love.graphics.print("only + and x  ->  an arithmetic circuit", 290, y2 + 46)
+end
+
+function Game.viz.r1cs(self, m)
+  local x0, y, bw = 280, 54, 10
+  local segs = { { 1, Theme.coin }, { 16, COL.cyan }, { 16, COL.neon }, { 56, { 0.55, 0.55, 0.65, 1 } } }
+  local i = 0
+  for _, seg in ipairs(segs) do
+    for _ = 1, seg[1] do
+      setC(seg[2], 0.9)
+      love.graphics.rectangle("fill", x0 + i * bw, y, bw - 2, 18)
+      i = i + 1
+    end
+  end
+  love.graphics.setFont(assets.font.small)
+  setC(COL.cream, 0.9)
+  love.graphics.print("w = [ 1 | 16 clues | 16 secret | 56 temporaries ]   89 entries", x0, y + 22)
+  -- one line per multiplication, flipping past
+  local k = math.floor(self.mapT * 5) % FACTS.constraints + 1
+  local ly = y + 62
+  for r = 0, 2 do
+    local n = (k + r - 1) % FACTS.constraints + 1
+    chip(x0, ly + r * 40, 116, 32, "line " .. n, COL.paper, r == 0 and Theme.coin or COL.cream)
+    chip(x0 + 124, ly + r * 40, 500, 32, "(A.w)  x  (B.w)  =  (C.w)", DARK, r == 0 and COL.cyan or COL.cream)
+  end
+  chip(x0 + 650, ly, 200, 32, FACTS.constraints .. " lines", GOLDBG, Theme.coin)
+end
+
+function Game.viz.qap(self, m)
+  local x0, x1, mid, n = 280, 1160, 132, 8
+  setC(COL.cream, 0.35)
+  love.graphics.setLineWidth(2)
+  love.graphics.line(x0, mid, x1, mid)
+  local pts = {}
+  for px = x0, x1, 6 do
+    local u = (px - x0) / (x1 - x0) * n
+    local v = math.sin(u * math.pi) * (0.5 + 0.5 * math.sin(u * 0.9 + self.t * 0.6))
+    pts[#pts + 1] = px
+    pts[#pts + 1] = mid - v * 66
+  end
+  setC(COL.cyan, 0.9)
+  love.graphics.setLineWidth(3)
+  love.graphics.line(pts)
+  love.graphics.setLineWidth(1)
+  love.graphics.setFont(assets.font.small)
+  for k = 1, n - 1 do
+    local px = x0 + k / n * (x1 - x0)
+    setC(Theme.coin)
+    love.graphics.circle("fill", px, mid, 5)
+    setC(COL.cream, 0.8)
+    love.graphics.print(tostring(k), px - 6, mid + 10)
+  end
+  -- tau: the one secret point where Uncle Wing looks
+  local tx = x0 + (3.4 + 0.3 * math.sin(self.t * 0.7)) / n * (x1 - x0)
+  setC(COL.neon)
+  love.graphics.rectangle("fill", tx - 2, 56, 4, mid - 56 + 34)
+  love.graphics.setFont(assets.font.ui)
+  love.graphics.print("tau", tx + 8, 56)
+  love.graphics.setFont(assets.font.small)
+  setC(COL.gold, 0.9)
+  love.graphics.print("A(x).B(x) - C(x) = H(x).Z(x)      Z(x) = 0 at every line number", x0, mid + 42)
+end
+
+function Game.viz.setup(self, m)
+  local names = { "tau", "alpha", "beta", "gamma", "delta" }
+  local burn = ease.clamp((self.mapT - 1.5) / 2.5, 0, 1)
+  for i, nme in ipairs(names) do
+    local x = 300 + (i - 1) * 108
+    local y = 54 + math.sin(self.t * 2 + i) * 4 - burn * 22
+    local f = assets.font.codeSm
+    chip(
+      x,
+      y,
+      100,
+      32,
+      nme,
+      { 0.20, 0.06, 0.12, 0.95 * (1 - burn) },
+      { COL.neon[1], COL.neon[2], COL.neon[3], 1 - burn },
+      f
+    )
+    chip(x, 122, 100, 32, "[" .. nme .. "]G", DARK, COL.cyan, f)
+  end
+  if burn > 0 then
+    for i = 1, 5 do
+      local x = 300 + (i - 1) * 108 + 50
+      local h = 26 + 18 * math.abs(math.sin(self.t * 9 + i))
+      love.graphics.setColor(1, 0.55, 0.1, 0.85 * burn)
+      love.graphics.polygon("fill", x - 20, 98, x + 20, 98, x, 98 - h)
+      love.graphics.setColor(1, 0.9, 0.3, 0.85 * burn)
+      love.graphics.polygon("fill", x - 10, 98, x + 10, 98, x, 98 - h * 0.55)
+    end
+  end
+  local f = self:snarkFacts()
+  chip(870, 54, 200, 40, string.format("pk  %d B", f.pk_bytes), GOLDBG, Theme.coin)
+  chip(870, 114, 200, 40, string.format("vk  %d B", f.vk_bytes), GREENBG, Theme.admit)
+  love.graphics.setFont(assets.font.small)
+  setC(COL.cream, 0.85)
+  love.graphics.print("-> Mei", 1080, 62)
+  love.graphics.print("-> Uncle Wing", 1080, 122)
+  setC(COL.gold, 0.9)
+  love.graphics.print(burn >= 1 and "toxic waste: deleted" or "toxic waste: burning...", 300, 168)
+end
+
+function Game.viz.pairing(self, m)
+  local y = 58
+  chip(300, y, 130, 40, "[3]G1", DARK, COL.cyan)
+  chip(300, y + 60, 130, 40, "[5]G2", DARK, COL.neon)
+  arrow(436, y + 20, 504, COL.cyan)
+  arrow(436, y + 80, 504, COL.neon)
+  local mx, my = 506, y - 10
+  setC(Theme.coin)
+  roundrect("fill", mx, my, 150, 120, 10)
+  love.graphics.setColor(0.75, 0.9, 1, 0.9)
+  roundrect("fill", mx + 6, my + 6, 138, 108, 8)
+  love.graphics.setFont(assets.font.stamp)
+  setC(Theme.navy)
+  love.graphics.printf("e( , )", mx, my + 42, 150, "center")
+  arrow(662, y + 50, 734, Theme.coin)
+  chip(736, y + 30, 250, 40, "e(G1,G2)^15", GOLDBG, Theme.coin)
+  love.graphics.setFont(assets.font.small)
+  setC(COL.cream, 0.85)
+  love.graphics.print("GT", 996, y + 38)
+  setC(COL.gold, 0.9)
+  love.graphics.print("3 x 5 happens inside the mirror; nobody ever sees 3 or 5", 300, y + 128)
+end
+
+-- The PROOF street: prove + verify for real, once per visit, over ffi.
+-- Also checks the same proof against other clues, so REJECT is on screen too.
+function Game:snarkLive()
+  if self.snark then
+    return self.snark
+  end
+  local live = {}
+  if not Snark.available() then
+    live.missing = Snark.status()
+  else
+    local d = Snark.DEMO
+    live.report = Snark.prove(d.clues, d.solution)
+    if live.report and live.report.proof then
+      local other = { unpack(d.clues) }
+      other[2] = 3 -- claims cell 2 is printed as 3
+      live.other = Snark.verify(other, live.report.proof)
+    else
+      live.missing = "error"
+    end
+  end
+  self.snark = live
+  return live
+end
+
+function Game.viz.proof(self, m)
+  local live = self:snarkLive()
+  local uiF, smF = assets.font.ui, assets.font.small
+  local lh = smF:getHeight()
+  local bx, by, cell = 270, 50, 36
+  self:drawBoard(bx, by, cell, true)
+  local x, y, w, hexN
+  if PORT then
+    x, y, w, hexN = bx, by + cell * 4 + 12, 440, 9
+  else
+    x, y, w, hexN = bx + cell * 4 + 20, by, 700, 14
+  end
+  local ph = 8 + uiF:getHeight() + 6 + lh * 5 + 12
+  setC(Theme.ink, 0.86)
+  roundrect("fill", x, y, w, ph, 8)
+  love.graphics.setFont(uiF)
+  setC(COL.gold)
+  love.graphics.print(T("snark_title"), x + 12, y + 8)
+  love.graphics.setFont(smF)
+  local ly = y + 8 + uiF:getHeight() + 6
+  if live.missing then
+    setC(COL.stamp)
+    love.graphics.printf(T("snark_missing"), x + 12, ly, w - 24, "left")
+    return
+  end
+  local r, p = live.report, live.report.proof
+  setC(COL.cream)
+  love.graphics.print(T("snark_lines", r.constraints, r.public_inputs, r.secret_cells), x + 12, ly)
+  love.graphics.print(T("snark_keys", r.pk_bytes, r.vk_bytes, r.ms.setup), x + 12, ly + lh)
+  setC(COL.cyan)
+  love.graphics.setFont(assets.font.codeSm)
+  love.graphics.print(
+    string.format("A %s..  B %s..  C %s..", p.a:sub(1, hexN), p.b:sub(1, hexN), p.c:sub(1, hexN)),
+    x + 12,
+    ly + lh * 2 + 3
+  )
+  love.graphics.setFont(smF)
+  setC(COL.cream)
+  love.graphics.print(T("snark_proof", p.bytes, r.ms.prove, r.ms.verify, r.pairings), x + 12, ly + lh * 3)
+  chip(
+    x + 12,
+    ly + lh * 4 + 2,
+    150,
+    lh + 2,
+    r.verdict,
+    r.ok and GREENBG or REDBG,
+    r.ok and Theme.admit or COL.stamp,
+    smF
+  )
+  if live.other then
+    setC(COL.cream, 0.85)
+    love.graphics.print(T("snark_tamper", live.other.verdict), x + 176, ly + lh * 4 + 3)
+  end
+end
+
 -- The bottom half: story + question (left), code with the blank (right),
 -- the input prompt, and HINT / OK / NEXT buttons.
 function Game:drawTerminal(m)
@@ -1378,7 +2060,17 @@ function Game:drawTerminal(m)
   local nameF = fontOf("small")
   local storyHgt = storyF:getHeight()
   local codeHgt = codeF:getHeight()
-  local helpH = math.max(helpF:getHeight() + 12, fontOf("button"):getHeight() + 22)
+  local btnW, btnH = btnBox({
+    T("hint"),
+    T("answer"),
+    T("hide"),
+    T("ok"),
+    T("next"),
+    T("auto"),
+    T("auto_on"),
+  }, 110, 28, 36)
+  local stepW = btnBox({ T("step_prev"), T("step_next") }, btnW, 24)
+  local helpH = math.max(helpF:getHeight() + 12, btnH + 8)
   local promptH = codeHgt + 20
   local pad = PORT and 8 or 10
 
@@ -1626,12 +2318,14 @@ function Game:drawTerminal(m)
     love.graphics.printf("ENTER", pad, py, W - pad * 2 - 14, "right")
   end
 
-  local btnH = math.max(36, fontOf("button"):getHeight() + 14)
   local btnY = H - helpH + math.floor((helpH - btnH) * 0.5)
-  local btnW = math.max(110, fontOf("button"):getWidth("NEXT") + 28)
   self.actHint = { pad, btnY, btnW, btnH }
   self.actOk = { pad + btnW + 10, btnY, btnW, btnH }
   self.actNext = self.actOk
+  self.actAuto = { pad + (btnW + 10) * 2, btnY, btnW, btnH }
+  -- the blank steppers sit apart, right-aligned, away from HINT / OK
+  self.actNextStage = { W - pad - stepW, btnY, stepW, btnH }
+  self.actPrevStage = { W - pad - stepW * 2 - 10, btnY, stepW, btnH }
   local hintLabel = ({ [0] = T("hint"), T("answer"), T("hide") })[self.hintLevel] or T("hint")
   self:pixBtn(self.actHint[1], self.actHint[2], self.actHint[3], self.actHint[4], hintLabel, self.hintOn)
   if self.solved then
@@ -1639,16 +2333,24 @@ function Game:drawTerminal(m)
   else
     self:pixBtn(self.actOk[1], self.actOk[2], self.actOk[3], self.actOk[4], T("ok"))
   end
+  local a = self.actAuto
+  self:pixBtn(a[1], a[2], a[3], a[4], T(self.auto and "auto_on" or "auto"), self.auto)
+  local p, n = self.actPrevStage, self.actNextStage
+  self:pixBtn(p[1], p[2], p[3], p[4], T("step_prev"), false, not self:hasStage(self.stage - 1))
+  self:pixBtn(n[1], n[2], n[3], n[4], T("step_next"), false, not self:hasStage(self.stage + 1))
   love.graphics.setFont(helpF)
   setC(Theme.cream)
-  local helpX = pad + btnW * 2 + 24
+  local helpX = pad + btnW * 3 + 34
   local help = T("help_play")
   if self.solved then
     help = T("help_walk")
   elseif self.hintLevel == 1 then
     help = T("help_answer")
   end
-  love.graphics.print(help, helpX, H - helpH + 4)
+  -- the keyboard reminder is the first thing to go when the row is tight
+  if helpF:getWidth(help) <= p[1] - 12 - helpX then
+    love.graphics.print(help, helpX, H - helpH + 4)
+  end
   love.graphics.pop()
 end
 
@@ -1661,15 +2363,16 @@ function Game:drawWin()
   local pad = PORT and 12 or 24
   local innerW = W - pad * 2 - 28
   local lines = 0
-  for i = 1, #maps do
-    local _, wrapped = smF:getWrap(P(maps[i].lesson), innerW - 140)
+  for i = 1, #self:maps() do
+    local _, wrapped = smF:getWrap(P(self:maps()[i].lesson), innerW - 140)
     lines = lines + math.max(1, #wrapped)
   end
-  local recapH = uh + 16 + lines * mh + #maps * 4 + mh + 24
+  local recapH = uh + 16 + lines * mh + #self:maps() * 4 + mh + 24
   local recapY = H - recapH - 8
   local sceneH = recapY - 4
 
-  local cam = self:drawBg("bg_store", 0, 0, W, sceneH, "win")
+  local win = self:questDef().win
+  local cam = self:drawBg(win.bg or "bg_store", 0, 0, W, sceneH, "win")
   local gy = cam.groundY
   local ch = math.min(cam.charH, sceneH * 0.5)
   local gap = ch * 0.72
@@ -1681,7 +2384,7 @@ function Game:drawWin()
   sprites.item("stamp_admit", 0, 0, 2.2, -0.1)
   love.graphics.setFont(assets.font.stamp)
   love.graphics.setColor(Theme.admit[1], Theme.admit[2], Theme.admit[3], k)
-  love.graphics.printf("ADMIT", -80, 18, 160, "center")
+  love.graphics.printf(win.stamp or "ADMIT", -80, 18, 160, "center")
   love.graphics.pop()
 
   local subY = PORT and 118 or 96
@@ -1689,7 +2392,7 @@ function Game:drawWin()
   love.graphics.rectangle("fill", 0, subY - 6, W, assets.font.subtitle:getHeight() + 12)
   love.graphics.setFont(assets.font.subtitle)
   setC(COL.cream, k)
-  love.graphics.printf(T("win_title"), 0, subY, W, "center")
+  love.graphics.printf(T(win.title or "win_title"), 0, subY, W, "center")
 
   sprites.draw("hero", W * 0.22, gy, { t = self.t, bounce = math.abs(math.sin(self.t * 4)) * 8 * k, h = ch })
   sprites.draw(
@@ -1710,11 +2413,11 @@ function Game:drawWin()
   UI.panel(pad, recapY, W - pad * 2, recapH, Theme.panel)
   love.graphics.setFont(uiF)
   setC(Theme.ink, k)
-  love.graphics.print(T("win_head"), pad + 14, recapY + 12)
+  love.graphics.print(T(win.head or "win_head"), pad + 14, recapY + 12)
   local y = recapY + 12 + uh + 10
   love.graphics.setFont(smF)
-  for i = 1, #maps do
-    local m = maps[i]
+  for i = 1, #self:maps() do
+    local m = self:maps()[i]
     setC(Theme.brick, k)
     love.graphics.print(m.station, pad + 14, y)
     setC(Theme.ink, k)
@@ -1730,9 +2433,9 @@ end
 
 -- ---------------------------------------------------------------- input
 
-local function digitKey(key)
+local function digitKey(key, count)
   local n = tonumber(key) or tonumber(key:match("^kp(%d)$") or "")
-  if n and n >= 1 and n <= #maps then
+  if n and n >= 1 and n <= count then
     return n
   end
   return nil
@@ -1758,10 +2461,12 @@ function Game:keypressed(key)
       self:continue()
     elseif key == "m" then
       self:enterMap("title")
+    elseif key == "q" then
+      self:toggleQuest()
     elseif key == "escape" then
       love.event.quit()
     else
-      local n = digitKey(key)
+      local n = digitKey(key, #self:maps())
       if n then
         self:enterPlay(n)
       end
@@ -1772,16 +2477,18 @@ function Game:keypressed(key)
   if st == "map" then
     if key == "escape" then
       self:leaveMap()
+    elseif key == "q" then
+      self:toggleQuest()
     elseif key == "left" or key == "up" or key == "a" or key == "w" or key == "h" or key == "k" then
-      self.mapCursor = (self.mapCursor - 2) % #maps + 1
+      self.mapCursor = (self.mapCursor - 2) % #self:maps() + 1
       SFX.play("move")
     elseif key == "right" or key == "down" or key == "d" or key == "s" or key == "l" or key == "j" then
-      self.mapCursor = self.mapCursor % #maps + 1
+      self.mapCursor = self.mapCursor % #self:maps() + 1
       SFX.play("move")
     elseif key == "return" or key == "space" or key == "kpenter" then
       self:enterPlay(self.mapCursor)
     else
-      local n = digitKey(key)
+      local n = digitKey(key, #self:maps())
       if n then
         self:enterPlay(n)
       end
@@ -1799,6 +2506,11 @@ function Game:keypressed(key)
   end
 
   -- play
+  if key == "f5" then
+    self:toggleAuto()
+    return
+  end
+  self:stopAuto()
   if key == "escape" then
     self:enterMap("play")
   elseif key == "backspace" then
@@ -1815,6 +2527,10 @@ function Game:keypressed(key)
     end
   elseif key == "tab" then
     self:toggleHint()
+  elseif key == "pageup" then
+    self:prevStage()
+  elseif key == "pagedown" then
+    self:nextStage()
   elseif self.solved and (key == "n" or key == "space") then
     self:advance()
   end
@@ -1832,6 +2548,7 @@ function Game:textinput(text)
   if text == "\t" or text == "\n" or text == "\r" then
     return
   end
+  self:stopAuto()
   if #self.input < MAX_INPUT then
     self.input = self.input .. text
     self.idle = 0
@@ -1870,6 +2587,12 @@ function Game:mousepressed(x, y, button)
 
   local st = self.state
   if st == "map" then
+    for q, r in ipairs(self.questHits) do
+      if inRect(vx, vy, r) then
+        self:setQuest(q)
+        return
+      end
+    end
     for i, r in ipairs(self.mapHits) do
       if inRect(vx, vy, r) then
         self.mapCursor = i
@@ -1891,6 +2614,11 @@ function Game:mousepressed(x, y, button)
   end
 
   -- play
+  if inRect(vx, vy, self.actAuto) then
+    self:toggleAuto()
+    return
+  end
+  self:stopAuto()
   if inRect(vx, vy, self.actHint) then
     self:toggleHint()
     return
@@ -1901,6 +2629,14 @@ function Game:mousepressed(x, y, button)
   end
   if (not self.solved) and inRect(vx, vy, self.actOk) then
     self:submit()
+    return
+  end
+  if inRect(vx, vy, self.actPrevStage) then
+    self:prevStage()
+    return
+  end
+  if inRect(vx, vy, self.actNextStage) then
+    self:nextStage()
     return
   end
   for i, r in ipairs(self.stationHits) do
